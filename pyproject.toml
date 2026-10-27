@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "drivebench"
-version = "0.2.0"
-description = "Menu-based Linux drive inventory, persistent history, and read-only partition mounting"
+version = "0.4.1"
+description = "Menu-based Linux utility for drive discovery, diagnostics, wiping, formatting, and persistent history"
 requires-python = ">=3.10"
 dependencies = []
 
