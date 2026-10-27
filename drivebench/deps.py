@@ -29,6 +29,9 @@ COMMANDS = [
     ("partprobe", "parted", False, "inform kernel of updated partition table"),
     ("mkfs.exfat", "exfatprogs", False, "format for modern OS compatibility"),
     ("mkfs.fat", "dosfstools", False, "format FAT32 for older systems"),
+    ("testdisk", "testdisk", False, "read-only investigation of lost partitions"),
+    ("photorec", "testdisk", False, "recover file contents to another drive"),
+    ("ddrescue", "gddrescue", False, "create a disk image with resumable mapfile"),
 ]
 
 
