@@ -1,2 +1,10 @@
-# DriveBench v0.2 uses only Python's standard library.
-# Ubuntu system utilities are listed in README.md and checked at startup.
+# DriveBench v0.4.1
+# No third-party Python packages required.
+# Python 3.10+ standard library only.
+#
+# Ubuntu utilities are installed through apt.
+# Optional/feature-specific packages include:
+# smartmontools, sg3-utils, wget, git,
+# parted, dosfstools, exfatprogs, diffutils.
+#
+# See README.md for installation instructions.
