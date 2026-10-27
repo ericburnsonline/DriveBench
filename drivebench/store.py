@@ -372,3 +372,61 @@ def finish_processing(op: dict, *, success: bool, fields: dict | None = None) ->
             else:
                 record['last_report_written_at'] = event['finished_at']
                 record['status'] = 'PREPARED' if record.get('last_wiped_at') and record.get('last_formatted_at') else 'REPORTED'
+
+
+def start_analysis(disk: dict, kind: str, fields: dict | None = None) -> dict:
+    """Durably begin an evidence scan or recovery before opening raw media.
+
+    Anonymous disks do not get matched to prior events merely by path/slot.
+    """
+    import uuid
+    event = {'event_id': 'SCAN-' + uuid.uuid4().hex,
+             'kind': kind, 'started_at': timestamp(),
+             'status': 'IN_PROGRESS', 'disk_at_start': _summary(disk),
+             'details': fields or {}}
+    with edit_json(paths()[1], default_state()) as state:
+        rec = next((r for r in state.setdefault('records', {}).values()
+                    if disk.get('identity') and r.get('identity') == disk['identity']), None)
+        if not rec and disk.get('operator_bound_session') and disk.get('manual_record_id'):
+            candidate = state['records'].get(disk['manual_record_id'])
+            if (candidate and candidate.get('identity_method') == 'manual_confirmation_required'
+                and (candidate.get('last_device') or {}).get('model') == disk.get('model')
+                and (candidate.get('last_device') or {}).get('size') == disk.get('size')):
+                rec = candidate
+        if rec:
+            rec.setdefault('raw_analysis', []).append(event)
+        else:
+            state.setdefault('unlinked_analysis', {})[event['event_id']] = event
+    return {'event_id': event['event_id'], 'record_id': rec['id'] if rec else None}
+
+
+def finish_analysis(ref: dict, *, report: dict, success: bool) -> None:
+    """Atomically commit completed/incomplete results; no file payloads saved."""
+    with edit_json(paths()[1], default_state()) as state:
+        rid = ref.get('record_id')
+        if rid:
+            entry = next((v for v in state.get('records', {}).get(rid, {}).get('raw_analysis', [])
+                          if v['event_id'] == ref['event_id']), None)
+        else:
+            entry = state.get('unlinked_analysis', {}).get(ref['event_id'])
+        if entry is None:
+            raise ValueError('Raw analysis event missing; cannot mark completion')
+        entry['finished_at'] = timestamp()
+        entry['status'] = 'COMPLETED' if success else 'INCOMPLETE_OR_FAILED'
+        entry['result'] = report
+
+
+def update_analysis(ref: dict, fields: dict) -> None:
+    """Checkpoint progress without treating an interrupted scan as completed."""
+    with edit_json(paths()[1], default_state()) as state:
+        rid = ref.get('record_id')
+        if rid:
+            entry = next((v for v in state.get('records', {}).get(rid, {}).get('raw_analysis', [])
+                          if v.get('event_id') == ref['event_id']), None)
+        else:
+            entry = state.get('unlinked_analysis', {}).get(ref['event_id'])
+        if entry is None:
+            raise ValueError('Analysis event missing; stop scan')
+        if entry['status'] != 'IN_PROGRESS':
+            raise ValueError('Analysis already finished')
+        entry.setdefault('progress', {}).update(fields)
