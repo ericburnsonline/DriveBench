@@ -189,6 +189,39 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue(finished.call_args.kwargs['success'])
         started.assert_called_once()
 
+    def test_full_scan_inherits_sudo_authentication_session(self):
+        # The prior start_new_session=True caused sudo -n to be unable to
+        # reuse sudo -v credentials on default tty/session-scoped policies.
+        import io
+        from unittest.mock import Mock
+        proc = Mock()
+        proc.stdout = io.BytesIO(b"\x00" * 4096)
+        proc.wait.return_value = 0
+        evidence = raw.EvidenceCounter()
+        with patch.object(raw.subprocess, 'Popen', return_value=proc) as popen:
+            rc, stderr, prefix = raw._run_full_scan('/dev/sdz', 4096, evidence)
+        self.assertEqual(rc, 0)
+        self.assertEqual(evidence.bytes_read, 4096)
+        self.assertNotIn('start_new_session', popen.call_args.kwargs)
+        self.assertIn('sudo', popen.call_args.args[0])
+        self.assertIn('-n', popen.call_args.args[0])
+
+    def test_interrupted_full_scan_terminates_only_reader(self):
+        # Without a separate session, killpg(p.pid) could kill DriveBench
+        # itself. Ensure interruption terminates only the spawned reader.
+        from unittest.mock import Mock
+        proc = Mock()
+        proc.stdout.read.side_effect = KeyboardInterrupt()
+        proc.poll.return_value = None
+        proc.wait.return_value = 0
+        with patch.object(raw.subprocess, 'Popen', return_value=proc), \
+             patch.object(raw.os, 'killpg') as killpg:
+            with self.assertRaises(KeyboardInterrupt):
+                raw._run_full_scan('/dev/sdz', 4096, raw.EvidenceCounter())
+        proc.terminate.assert_called_once_with()
+        killpg.assert_not_called()
+        proc.wait.assert_called_once()
+
     def test_full_scan_failure_persisted_incomplete(self):
         d = sample_disk(size=20 * raw.MIB)
         with patch.object(raw, '_source', return_value=d), \
