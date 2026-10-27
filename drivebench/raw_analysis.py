@@ -211,7 +211,10 @@ class EvidenceCounter:
 def _run_full_scan(device: str, size: int, sink: EvidenceCounter, on_progress=None) -> tuple[int, str, bytes]:
     argv = ['sudo', '-n', 'dd', 'if=' + device, 'bs=4M', 'status=none']
     with __import__('tempfile').TemporaryFile(mode='w+b') as errors:
-        p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=errors, start_new_session=True)
+        # Keep the same login session/controlling TTY as `sudo -v` in
+        # _sudo_ready(). Creating a new session here can make sudo -n lose
+        # access to the already-authenticated sudo timestamp.
+        p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=errors)
         assert p.stdout is not None
         pos = 0
         progress_mark = 0
@@ -232,11 +235,16 @@ def _run_full_scan(device: str, size: int, sink: EvidenceCounter, on_progress=No
                     print(f'  Read {pos / (1024 ** 3):.2f} GiB of {size / (1024 ** 3):.2f} GiB', flush=True)
             rc = p.wait()
         except BaseException:
+            # The process is NOT in its own group; killpg() would risk
+            # terminating DriveBench and the invoking terminal too.
+            # sudo forwards termination to its child on supported systems.
+            if p.poll() is None:
+                p.terminate()
             try:
-                os.killpg(p.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            p.wait()
+                p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.wait()
             raise
         finally:
             p.stdout.close()
