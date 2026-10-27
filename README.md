@@ -1,4 +1,4 @@
-# DriveBench v0.4.1: Ubuntu drive inspection, wiping, formatting, and reporting
+# DriveBench v0.4.2: Ubuntu drive inspection, wiping, formatting, and reporting
 
 DriveBench is a **terminal menu-based** utility for an Ubuntu storage-test bench with SCSI adapters, USB-to-IDE/SATA bridges, and normal SATA/IDE drives. **There are no CLI subcommands to learn.** Start it with `./start-drivebench.sh` (or `python3 -m drivebench` from the project directory). All functions are selected using numbered menus.
 
@@ -20,7 +20,7 @@ DriveBench is a **terminal menu-based** utility for an Ubuntu storage-test bench
 - **Drive identification menu:** retry drive-native serial inquiry using `smartctl -i -j` or SCSI VPD (`sg_inq`), with an optional sudo retry for the selected disk. USB adapters are not trusted unless ATA pass-through exposes the drive's own serial.
 - **Operator labels:** enter a manual serial and/or asset ID for each drive, stored immediately with atomic, fsynced writes to private persistent history. Manual data is never silently promoted to a verified hardware identity.
 
-**Not included yet:** dedicated standalone surface testing, device-native SSD secure erase, Zebra label printing, and Macintosh HFS/Apple Partition Map creation. SMART/device-log inspection is included, but is not a surface test.
+**Not included yet:** a dedicated *write/read* surface stress test, device-native SSD secure erase, Zebra label printing, and Macintosh HFS/Apple Partition Map creation. SMART/device-log inspection is included, but is not a surface test.
 
 ## Install on Ubuntu Server
 
@@ -31,6 +31,8 @@ sudo apt update
 sudo apt install -y python3 util-linux udev pciutils sudo coreutils
 # Diagnostics, GitHub updates, wiping, formatting and verification:
 sudo apt install -y smartmontools sg3-utils wget git parted dosfstools exfatprogs diffutils
+# Optional new raw analysis, recovery, and imaging tools:
+sudo apt install -y testdisk gddrescue
 ```
 
 Ubuntu typically already includes almost all of these. DriveBench checks them every time it opens and provides the exact apt command for any that are missing. In the menu, choose **9. Check Ubuntu components / installation help** to repeat the check. `sudo` and `mount`/`umount` are required for the mount options, but inventory works without elevated privileges.
@@ -39,23 +41,23 @@ Download the archive and extract it to your home directory. For example, if the 
 
 ```bash
 cd ~
-unzip ~/Downloads/drivebench-menu-v0.4.1.zip
-cd drivebench-menu-v0.4.1
+unzip ~/Downloads/drivebench-menu-v0.4.2.zip
+cd drivebench-menu-v0.4.2
 ./start-drivebench.sh
 ```
 
 If `unzip` is missing, install it (`sudo apt install unzip`) or use Python's built-in ZIP extractor:
 
 ```bash
-python3 -m zipfile -e ~/Downloads/drivebench-menu-v0.4.1.zip ~/
+python3 -m zipfile -e ~/Downloads/drivebench-menu-v0.4.2.zip ~/
 ```
 
-The archive has a top-level `drivebench-menu-v0.4.1` directory. **No virtual environment or pip install is needed.** `requirements.txt` lists no packages (there are no third-party Python dependencies).
+The archive has a top-level `drivebench-menu-v0.4.2` directory. **No virtual environment or pip install is needed.** `requirements.txt` lists no packages (there are no third-party Python dependencies).
 
 Each time you want to run it:
 
 ```bash
-cd ~/drivebench-menu-v0.4.1
+cd ~/drivebench-menu-v0.4.2
 ./start-drivebench.sh
 ```
 
@@ -64,7 +66,7 @@ Run as your ordinary user, **not `sudo python3 -m drivebench`**. DriveBench refu
 ## Menus
 
 ```text
-DRIVEBENCH v0.4.1
+DRIVEBENCH v0.4.2
  1. Scan disks and partitions
  2. Select drive (inspect / mount / history)
  3. List all mount points and mount status
@@ -78,7 +80,37 @@ DRIVEBENCH v0.4.1
  0. Exit
 ```
 
-From **2. Select drive**, use **9. Wipe / format / write drive report** for the new v0.4 features, or **10. Identify drive / manually enter serial and asset ID** for the v0.4.1 features.
+From **2. Select drive**, choose **9. Wipe / format / write drive report** for supervised preparation, **10. Identify drive / manually enter serial and asset ID** for physical identification, or **11. Raw disk analysis / evidence & recovery** for the new v0.4.2 tools.
+
+
+### Raw disk evidence scanning and recovery (new in v0.4.2)
+
+Choose **2. Select drive**, select your disk, then **11. Raw disk analysis / evidence & recovery**.
+
+```text
+RAW DISK ANALYSIS / RECOVERY
+ 1. Quick evidence scan (sampled read-only)
+ 2. Full evidence scan (entire disk read-only)
+ 3. Inspect/search partition structures with TestDisk
+ 4. Recover file contents to a DIFFERENT disk with PhotoRec
+ 5. Image to a DIFFERENT disk with GNU ddrescue
+ 6. View previous analysis results
+ 0. Back
+```
+
+**First, run a quick scan before any wiping or formatting.** It reads samples from the beginning, quarter points, and end of the physical disk. It checks for partition and legacy filesystem markers in the first region, plus common file headers throughout the sampled regions. A full scan then reads the complete accessible disk and counts recognizable signatures (JPEG, PNG, PDF, ZIP, GIF, ELF, SQLite, gzip, RAR) with offsets and a zero-byte ratio. The report does not automatically extract file contents. You may see false positives, embedded files, or fragmented data; **signature hits are *not* guaranteed complete or recoverable files.** High entropy does not demonstrate prior encryption or a successful wipe, and **absence of findings does not mean the drive was never used**.
+
+The **TestDisk** choice can list the current partition layout or run a scripted `analyze,search` to investigate older/deleted partition structure. DriveBench deliberately omits TestDisk's `write` commands and does not expose its interactive partition-repair interface in this submenu. This is meant for evidence gathering, not altering partition tables.
+
+The **PhotoRec** option performs file carving and writes recovered files into a new output directory on **another physical disk**. A PhotoRec run may produce a very large number of files, some containing sensitive previous-owner data. Handle and dispose of recovered contents responsibly. The optional **GNU ddrescue** feature saves a raw image (`.img`) and resumable progress map (`.map`) on another disk. Neither feature writes to the original drive. DriveBench checks that the selected destination is an existing writable directory on a verifiable local block device, then checks its ancestry so it cannot be on the source disk. It deliberately rejects unverifiable destinations such as overlay, network, and tmpfs mounts; it is still your responsibility to ensure enough free space. External recovery tools run through `sudo` and the outputs may be root-owned.
+
+**DriveBench records** the time, drive identity, scan progress, signature counts, offsets, status, and outcomes in `~/.local/state/drivebench/state.json`. It does *not* store recovered personal file content inside its persistent records. Full scans checkpoint progress approximately every 256 MiB; after power loss the scan remains `IN_PROGRESS`, never falsely marked completed. For disks with a trustworthy hardware identity, history follows that disk across reboots. With a manually labeled disk, you must explicitly reattach its record after restarting. On completely unidentified/unattached drives, an unlinked event is saved but is not associated with an arbitrary later `/dev/sdX`.
+
+Saved raw scan history is also included in a `DRIVEBENCH-REPORT.txt` subsequently generated on a DriveBench-formatted disk. Once a disk has been overwritten, those old file signatures may no longer be discoverable, making this pre-wipe capture valuable.
+
+Dependencies: `dd` from `coreutils` for raw reads, `testdisk` (also provides `photorec`), `gddrescue` (provides `ddrescue`), `sudo`, `lsblk`, and `findmnt`. Select **9. Check Ubuntu components** on the main menu for install commands. No new Python packages are needed.
+
+**Hardware testing limitation:** Read-only behavior, failure handling, and destination guards are covered by simulated tests; the raw scans and external recovery tools have **not** yet been tested on your actual SCSI controller. Start with the Seagate on a nonessential drive, verify the model/serial and active mount status, and run the quick scan first. Avoid repeated scans of a drive that is physically failing; make a ddrescue image first instead. Never use the wipe/format menu until you've finished any desired recovery.
 
 ### Serial-number identification and persistence (new in v0.4.1)
 
@@ -203,8 +235,8 @@ From the project directory:
 python3 -m unittest discover -s tests -v
 ```
 
-Automated tests use mocks and do not touch block devices. v0.4.1 adds coverage for automatic SCSI/SMART serial discovery, USB bridge rejection, user-supplied serial and asset persistence, manual-only reboot association, and interrupted-operation history. They cover identity/history, protected disks, mounts, SCSI duplicate-ID patterns, SMART summaries, GitHub branch staging, destructive preflight, confirmation cancellation, wipe progress and unsuccessful wipes. **The v0.4 destructive workflows have NOT been tested on a real disk.** Start with a clearly identified sacrificial conventional HDD; confirm safeguards and verify the resulting layout and report before processing anything valuable.
+Automated tests use mocks and do not touch block devices. v0.4.2 adds raw analysis and destination-safety tests. v0.4.1 added coverage for automatic SCSI/SMART serial discovery, USB bridge rejection, user-supplied serial and asset persistence, manual-only reboot association, and interrupted-operation history. They cover identity/history, protected disks, mounts, SCSI duplicate-ID patterns, SMART summaries, GitHub branch staging, destructive preflight, confirmation cancellation, wipe progress and unsuccessful wipes. **The v0.4 destructive workflows have NOT been tested on a real disk.** Start with a clearly identified sacrificial conventional HDD; confirm safeguards and verify the resulting layout and report before processing anything valuable.
 
 ## For future development
 
-Planned: read-only disk imaging, dedicated full-surface read/write testing, support for additional older filesystem layouts, Zebra label printing, and proper SSD-native sanitization. The current wipe, format, and report features are explicit, supervised operations and should be validated against real hardware before regular use.
+Planned: advanced disk-image verification and recovery workflows, dedicated full-surface write/read testing, support for additional older filesystem layouts, Zebra label printing, and proper SSD-native sanitization. The current wipe, format, and report features are explicit, supervised operations and should be validated against real hardware before regular use.
