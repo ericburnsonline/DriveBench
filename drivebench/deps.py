@@ -16,6 +16,22 @@ COMMANDS = [
     ("sudo", "sudo", True, "scoped privilege elevation for mount/unmount"),
     ("install", "coreutils", True, "safe creation of mount directories"),
     ("rmdir", "coreutils", True, "cleanup of empty mount directories"),
+    ("blkid", "util-linux", False, "filesystem signature probing"),
+    ("wipefs", "util-linux", False, "non-destructive signature inspection"),
+    ("smartctl", "smartmontools", False, "drive SMART/SCSI health reporting"),
+    ("sg_logs", "sg3-utils", False, "additional SCSI logs (future/advanced)"),
+    ("sg_inq", "sg3-utils", False, "SCSI VPD serial-number inquiry"),
+    ("wget", "wget", False, "GitHub ZIP download"),
+    ("git", "git", False, "identify local checkout and manual upgrades"),
+    ("dd", "coreutils", False, "zero/random overwrite with progress"),
+    ("cmp", "diffutils", False, "full zero readback verification"),
+    ("parted", "parted", False, "create a new partition table and partition"),
+    ("partprobe", "parted", False, "inform kernel of updated partition table"),
+    ("mkfs.exfat", "exfatprogs", False, "format for modern OS compatibility"),
+    ("mkfs.fat", "dosfstools", False, "format FAT32 for older systems"),
+    ("testdisk", "testdisk", False, "read-only investigation of lost partitions"),
+    ("photorec", "testdisk", False, "recover file contents to another drive"),
+    ("ddrescue", "gddrescue", False, "create a disk image with resumable mapfile"),
 ]
 
 
@@ -51,4 +67,4 @@ def doctor() -> None:
     else:
         print("\nNo additional Python packages are required. No pip installation needed.")
     print("\nMounting will prompt through sudo for your password if required."
-          " Only mount, umount, and directory maintenance use sudo.")
+          " Mount/unmount, read-only diagnostics, wiping, formatting and report writing may use sudo only as selected.")
