@@ -1,6 +1,4 @@
-# DriveBench v0.4.2: Ubuntu drive inspection, wiping, formatting, and reporting
-
-> **Development branch:** `feature/uniform-byte-verification` adds full-surface uniform-byte analysis on top of the merged v0.4.2 release. The enhancement has local automated-test coverage; Ubuntu testing and a new real-disk scan are still pending. Do not treat this branch as a new stable release yet.
+# DriveBench v0.4.3: Ubuntu drive inspection, wiping, formatting, and reporting
 
 DriveBench is a **terminal menu-based** utility for an Ubuntu storage-test bench with SCSI adapters, USB-to-IDE/SATA bridges, and normal SATA/IDE drives. **There are no CLI subcommands to learn.** Start it with `./start-drivebench.sh` (or `python3 -m drivebench` from the project directory). All functions are selected using numbered menus.
 
@@ -17,11 +15,10 @@ DriveBench is a **terminal menu-based** utility for an Ubuntu storage-test bench
 - **GitHub update checker:** list public branches, display exact commit identifiers, download a selected commit ZIP into `/tmp/drivebench-updates/` with `wget`, and compare downloaded files with installed files. **No code is overwritten automatically.**
 - **SCSI duplicate-enumeration warning** when a drive model/capacity appears across eight or more target IDs on the same host/channel.
 - Clear messages about missing Ubuntu commands, including exact `apt install` instructions. No Python package dependencies.
-- Menu to log operator notes and a **clearly unverified, operator-reported** wipe performed outside the tool; DriveBench now supports supervised whole-disk wiping, FAT32/exFAT formatting, and on-disk reports.
-
+- Menu to log operator notes and a **clearly unverified, operator-reported** wipe performed outside the tool; DriveBench supports supervised whole-disk wiping, FAT32/exFAT formatting, and on-disk reports.
 - **Drive identification menu:** retry drive-native serial inquiry using `smartctl -i -j` or SCSI VPD (`sg_inq`), with an optional sudo retry for the selected disk. USB adapters are not trusted unless ATA pass-through exposes the drive's own serial.
 - **Operator labels:** enter a manual serial and/or asset ID for each drive, stored immediately with atomic, fsynced writes to private persistent history. Manual data is never silently promoted to a verified hardware identity.
-- **Uniform-byte analysis (development branch):** report whether `0x00`, `0xFF`, `0x6C`, or any other single byte fills all examined data. A successful complete read may verify the entire *readable logical surface*; quick scans only establish results for the sampled regions. Findings are saved in analysis history.
+- **Uniform-byte analysis:** report whether `0x00`, `0xFF`, `0x6C`, or any other single byte fills all examined data. A successful complete read may verify the entire *readable logical surface*; quick scans only establish results for the sampled regions. Findings are saved in analysis history.
 
 **Not included yet:** a dedicated *write/read* surface stress test, device-native SSD secure erase, Zebra label printing, and Macintosh HFS/Apple Partition Map creation. SMART/device-log inspection is included, but is not a surface test.
 
@@ -34,42 +31,36 @@ sudo apt update
 sudo apt install -y python3 util-linux udev pciutils sudo coreutils
 # Diagnostics, GitHub updates, wiping, formatting and verification:
 sudo apt install -y smartmontools sg3-utils wget git parted dosfstools exfatprogs diffutils
-# Optional new raw analysis, recovery, and imaging tools:
+# Optional recovery and imaging tools:
 sudo apt install -y testdisk gddrescue
 ```
 
 Ubuntu typically already includes almost all of these. DriveBench checks them every time it opens and provides the exact apt command for any that are missing. In the menu, choose **9. Check Ubuntu components / installation help** to repeat the check. `sudo` and `mount`/`umount` are required for the mount options, but inventory works without elevated privileges.
 
-Download the archive and extract it to your home directory. For example, if the ZIP is in `~/Downloads`:
+Download the latest source archive from [the DriveBench repository](https://github.com/ericburnsonline/DriveBench) using **Code → Download ZIP**, extract it into a fresh directory, and open a terminal inside the extracted repository root. From there:
 
 ```bash
-cd ~
-unzip ~/Downloads/drivebench-menu-v0.4.2.zip
-cd drivebench-menu-v0.4.2
-./start-drivebench.sh
+bash run-tests.sh
+bash start-drivebench.sh
 ```
 
-If `unzip` is missing, install it (`sudo apt install unzip`) or use Python's built-in ZIP extractor:
+Alternatively, use Git to check out the repository:
 
 ```bash
-python3 -m zipfile -e ~/Downloads/drivebench-menu-v0.4.2.zip ~/
+git clone https://github.com/ericburnsonline/DriveBench.git
+cd DriveBench
+bash run-tests.sh
+bash start-drivebench.sh
 ```
 
-The example commands above refer to the standalone v0.4.2 release archive. **For this development branch**, download the ZIP from GitHub using **Code → Download ZIP** while on `feature/uniform-byte-verification`, extract to a fresh directory, and run `bash run-tests.sh` there. The automatically generated GitHub ZIP has a different directory name. **No virtual environment or pip install is needed.** `requirements.txt` lists no packages (there are no third-party Python dependencies).
-
-Each time you want to run it:
-
-```bash
-cd ~/drivebench-menu-v0.4.2
-./start-drivebench.sh
-```
+To test a particular branch before it is merged, select that branch in GitHub before downloading its ZIP, or switch branches using Git. No virtual environment or pip installation is required; `requirements.txt` lists no third-party Python dependencies. Run future sessions from your extracted/checked-out project directory using `bash start-drivebench.sh`.
 
 Run as your ordinary user, **not `sudo python3 -m drivebench`**. DriveBench refuses to launch as root. Its Python interface, scan, and history always run as the normal user. Only the selected mount/unmount/directory operations, read-only diagnostics, wipe, format, and report mount/unmount invoke `sudo`. Wipe and format each require two typed confirmations. Sudo may ask for your login password on the terminal, depending on your local sudo policy. On a headless Ubuntu Server, this is expected to work over an interactive SSH terminal if your account is authorized to run sudo. If your account lacks sudo access, ask the server administrator to grant the appropriate rights; discovery and the other menus remain available.
 
 ## Menus
 
 ```text
-DRIVEBENCH v0.4.2
+DR I V E B E N C H  v0.4.3  |  Ubuntu drive workstation
  1. Scan disks and partitions
  2. Select drive (inspect / mount / history)
  3. List all mount points and mount status
@@ -79,11 +70,11 @@ DRIVEBENCH v0.4.2
  7. Manage disk/controller exclusions
  8. Drive history
  9. Check Ubuntu components / installation help
-10. Check GitHub branches / download update ZIP
+10. Check GitHub for branch updates / download ZIP
  0. Exit
 ```
 
-From **2. Select drive**, choose **9. Wipe / format / write drive report** for supervised preparation, **10. Identify drive / manually enter serial and asset ID** for physical identification, or **11. Raw disk analysis / evidence & recovery** for the new v0.4.2 tools.
+From **2. Select drive**, choose **9. Wipe / format / write drive report** for supervised preparation, **10. Identify drive / manually enter serial and asset ID** for physical identification, or **11. Raw disk analysis / evidence & recovery** for the raw-analysis tools introduced in v0.4.2.
 
 
 ### Raw disk evidence scanning and recovery (new in v0.4.2)
@@ -103,7 +94,7 @@ RAW DISK ANALYSIS / RECOVERY
 
 **First, run a quick scan before any wiping or formatting.** It reads samples from the beginning, quarter points, and end of the physical disk. It checks for partition and legacy filesystem markers in the first region, plus common file headers throughout the sampled regions. A full scan then reads the complete accessible disk and counts recognizable signatures (JPEG, PNG, PDF, ZIP, GIF, ELF, SQLite, gzip, RAR) with offsets and a zero-byte ratio. The report does not automatically extract file contents. You may see false positives, embedded files, or fragmented data; **signature hits are *not* guaranteed complete or recoverable files.** High entropy does not demonstrate prior encryption or a successful wipe, and **absence of findings does not mean the drive was never used**.
 
-#### Uniform-byte verification (development branch)
+#### Uniform-byte verification (v0.4.3)
 
 The uniform-byte check runs as part of the existing quick or full evidence scan; **no extra scan command or write operation is required**. The scanner compares every byte delivered by its read process, rather than inferring uniformity from a few sample sectors or a low entropy estimate. It supports **any single byte value** (`0x00`, `0xFF`, `0x6C`, etc.). Its results appear in the scan summary and are saved with the analysis result in the drive's persistent history.
 
@@ -114,14 +105,14 @@ The uniform-byte check runs as part of the existing quick or full evidence scan;
 | `NOT_UNIFORM` | At least two byte values were detected among the examined data. |
 | `NO_DATA` | No bytes were examined. |
 
-For example, if a new full scan confirms the suspected `0x6C` pattern on the Seagate ST318406LW, the summary will include text similar to:
+For example, a completed full-surface scan of a disk containing only `0x6C` would report:
 
 ```text
 Uniform byte pattern: 0x6C - VERIFIED across the entire
 <actual byte count>-byte readable logical surface
 ```
 
-The example describes a **possible future test result**, not an already established fact. Earlier manual `dd` samples found `0x6C` at the beginning, middle, and end of the Seagate, but these samples do not prove every byte matches. A pattern might come from manufacturing diagnostics, later testing, or an overwrite. **Uniform data alone cannot establish NOS/factory-new status, prior usage, secure sanitization, or the contents of reallocated/hidden physical sectors.** The existing signature-evidence assessment is separate from the uniform-byte result: `NO_RECOGNIZABLE_EVIDENCE_DETECTED` means only that this scanner found no recognized signatures.
+This is an illustrative output, not a claim about the Seagate ST318406LW. Earlier manual `dd` samples found `0x6C` at its beginning, middle, and end, but those samples do not prove that every byte matches. A pattern might come from manufacturing diagnostics, later testing, or an overwrite. **Uniform data alone cannot establish NOS/factory-new status, prior usage, secure sanitization, or the contents of reallocated/hidden physical sectors.** The existing signature-evidence assessment is separate from the uniform-byte result: `NO_RECOGNIZABLE_EVIDENCE_DETECTED` means only that this scanner found no recognized signatures.
 
 The **TestDisk** choice can list the current partition layout or run a scripted `analyze,search` to investigate older/deleted partition structure. DriveBench deliberately omits TestDisk's `write` commands and does not expose its interactive partition-repair interface in this submenu. This is meant for evidence gathering, not altering partition tables.
 
@@ -133,7 +124,7 @@ Saved raw scan history is also included in a `DRIVEBENCH-REPORT.txt` subsequentl
 
 Dependencies: `dd` from `coreutils` for raw reads, `testdisk` (also provides `photorec`), `gddrescue` (provides `ddrescue`), `sudo`, `lsblk`, and `findmnt`. Select **9. Check Ubuntu components** on the main menu for install commands. No new Python packages are needed.
 
-**Hardware testing status:** The v0.4.2 quick scan and full read-only raw scan ran on a Seagate ST318406LW connected to an Ubuntu SCSI test bench; the full scan read the accessible 17.09 GiB without reporting a read error. The **new uniform-byte verification has not yet been run on that physical disk**. TestDisk/PhotoRec/ddrescue integration and destructive wipe/format functions still require separate physical-hardware validation. Always confirm the current drive model/serial before scanning. Avoid repeated scans of failing media; make an image first where appropriate. Never wipe or format before any desired recovery.
+**Hardware validation and safety:** The v0.4.2 quick scan and full read-only raw scan were exercised on a Seagate ST318406LW connected to an Ubuntu SCSI test bench; the full scan read 17.09 GiB without reporting a read error. This historical observation does not establish that every byte of the Seagate has the same value. The separate TestDisk/PhotoRec/ddrescue integration and destructive wipe/format functions have not been validated on actual drives. Always confirm the current model and serial before scanning. Avoid repeated scans of failing media; make an image first where appropriate. Never wipe or format before any desired recovery.
 
 ### Serial-number identification and persistence (new in v0.4.1)
 
@@ -151,7 +142,7 @@ DriveBench's status and configuration are saved separately from the program's in
 
 ### Wiping, formatting, and writing a drive report (new in v0.4)
 
-**Destructive warning:** Wiping and formatting permanently destroy existing user data, including unknown or unsupported partition layouts. Complete your file recovery, cloning, or imaging first. Test this release with a sacrificial HDD before trusting it with your vintage equipment. No real physical disk was wiped or formatted during development.
+**Destructive warning:** Wiping and formatting permanently destroy existing user data, including unknown or unsupported partition layouts. Complete your file recovery, cloning, or imaging first. Test destructive operations with a sacrificial HDD before trusting them with valuable or vintage equipment. The destructive workflow has not yet been validated on real physical drives.
 
 From **2. Select drive**, choose **9. Wipe / format / write drive report**. These are separate, explicitly selected operations:
 
@@ -191,7 +182,7 @@ From the **Select drive** menu, choose **6. Inspect filesystem / partition signa
 
 Under **Select drive**, choose **7. Show SMART / SCSI drive-health details** to call `smartctl --all --json`, then display supported fields such as model, serial, power-on hours, SMART status, SCSI grown defects and read/write errors, ATA reallocations/pending sectors, and NVMe media errors. Some USB bridges need SAT translation (`-d sat`), selectable in the menu. Raw-device access may require `sudo`.
 
-Choose **8. Show detailed SCSI log pages** to run the read-only `sg_logs --all` report on older SCSI devices that expose additional LOG SENSE data. Attributes and vendor formats vary: **missing is not zero**, and even a passing SMART status does not prove media is error-free. Neither command starts a long/short drive self-test or performs a surface scan.
+Choose **8. Show detailed SCSI log pages** to run the read-only `sg_logs --all` report on older SCSI devices that expose additional LOG SENSE data. Attributes and vendor formats vary: **missing is not zero**, and even a passing SMART status does not prove media is error-free. For some SCSI disks, previously enabled GLTSD (Global Logging Target Save Disabled) can make saved power-on and error counters incomplete across power cycles; do not interpret low reported hours as proof of factory-new condition. Neither command starts a long/short drive self-test or performs a surface scan.
 
 ### GitHub updates and branches (introduced in v0.3)
 
@@ -246,7 +237,7 @@ These files persist across program exits, reboots and power cycling. They use th
 
 Disk history uses durable drive identities when available, never transient `/dev/sdX`. A drive may show `DISCOVERED`, `WIPED`, `WIPED_AND_FORMATTED`, `PREPARED`, `FORMATTED_NOT_WIPED`, `PROCESSING_INCOMPLETE`, `MANUAL_WIPE_REPORTED`, or `UNVERIFIED` depending on saved evidence and identity confidence. Marking an externally performed wipe requires choosing the per-drive history menu and explicitly confirming the report; that never claims DriveBench performed or verified the wipe. Reconnecting a disk can increase its seen count but never changes its processing state by itself.
 
-**USB bridge caveat:** Some USB-to-IDE/SATA adapters report their *adapter's* serial number, not the drive's. DriveBench does not trust generic USB bridge serial numbers for history matching. Unidentified drives won't automatically inherit a past wipe status. Use a physical label and your own written notes for those until human-assisted drive matching is implemented. Exclusions can follow a disk's trustworthy hardware identity or the *physical port/slot* where an exclusion is appropriate. Slot exclusions also affect future drives inserted there.
+**USB bridge caveat:** Some USB-to-IDE/SATA adapters report their *adapter's* serial number, not the drive's. DriveBench does not trust generic USB bridge serial numbers for history matching. Unidentified drives won't automatically inherit a past wipe status. For unidentified drives, use the manual identification and explicit record reattachment workflow under **Select drive → 10. Identify drive**, and verify the physical label after each restart. Exclusions can follow a disk's trustworthy hardware identity or the *physical port/slot* where an exclusion is appropriate. Slot exclusions also affect future drives inserted there.
 
 **USB refresh:** menu **5** settles outstanding udev events and refreshes discovery. It does not forcibly reset USB hardware. If you swap an IDE/SATA drive behind an unchanged USB adapter, disconnect and reconnect the adapter safely to trigger kernel re-enumeration. For SCSI disks, the workflow assumes powering off before replacing the drive.
 
@@ -258,7 +249,7 @@ From the project directory:
 python3 -m unittest discover -s tests -v
 ```
 
-Automated tests use mocks and do not touch block devices. The uniform-byte feature branch adds regression coverage for full vs. sampled verification, nonuniform data, `0x00`/`0xFF`/`0x6C` patterns, and persistent history. The expanded local suite has passed **86 tests**; the exact GitHub branch and Ubuntu bench still need to be tested before merging. Run `bash run-tests.sh` on a fresh branch checkout (or the Python command above), and check for **86 tests / OK**. v0.4.2 adds raw analysis and destination-safety tests. v0.4.1 added coverage for automatic SCSI/SMART serial discovery, USB bridge rejection, user-supplied serial and asset persistence, manual-only reboot association, and interrupted-operation history. They cover identity/history, protected disks, mounts, SCSI duplicate-ID patterns, SMART summaries, GitHub branch staging, destructive preflight, confirmation cancellation, wipe progress and unsuccessful wipes. **The v0.4 destructive workflows have NOT been tested on a real disk.** Start with a clearly identified sacrificial conventional HDD; confirm safeguards and verify the resulting layout and report before processing anything valuable.
+Automated tests use mocks and do not touch block devices. v0.4.3 regression coverage includes full vs. sampled uniform-byte verification, nonuniform data, `0x00`/`0xFF`/`0x6C` patterns, and persistent history. Run `bash run-tests.sh` on a fresh checkout (or the Python command above) and confirm the complete suite passes before using the new scanner on physical media. v0.4.2 adds raw analysis and destination-safety tests. v0.4.1 added coverage for automatic SCSI/SMART serial discovery, USB bridge rejection, user-supplied serial and asset persistence, manual-only reboot association, and interrupted-operation history. They cover identity/history, protected disks, mounts, SCSI duplicate-ID patterns, SMART summaries, GitHub branch staging, destructive preflight, confirmation cancellation, wipe progress and unsuccessful wipes. **The v0.4 destructive workflows have NOT been tested on a real disk.** Start with a clearly identified sacrificial conventional HDD; confirm safeguards and verify the resulting layout and report before processing anything valuable.
 
 ## For future development
 
