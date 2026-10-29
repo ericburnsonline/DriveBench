@@ -1,5 +1,7 @@
 # DriveBench v0.4.2: Ubuntu drive inspection, wiping, formatting, and reporting
 
+> **Development branch:** `feature/uniform-byte-verification` adds full-surface uniform-byte analysis on top of the merged v0.4.2 release. The enhancement has local automated-test coverage; Ubuntu testing and a new real-disk scan are still pending. Do not treat this branch as a new stable release yet.
+
 DriveBench is a **terminal menu-based** utility for an Ubuntu storage-test bench with SCSI adapters, USB-to-IDE/SATA bridges, and normal SATA/IDE drives. **There are no CLI subcommands to learn.** Start it with `./start-drivebench.sh` (or `python3 -m drivebench` from the project directory). All functions are selected using numbered menus.
 
 ## Features
@@ -19,6 +21,7 @@ DriveBench is a **terminal menu-based** utility for an Ubuntu storage-test bench
 
 - **Drive identification menu:** retry drive-native serial inquiry using `smartctl -i -j` or SCSI VPD (`sg_inq`), with an optional sudo retry for the selected disk. USB adapters are not trusted unless ATA pass-through exposes the drive's own serial.
 - **Operator labels:** enter a manual serial and/or asset ID for each drive, stored immediately with atomic, fsynced writes to private persistent history. Manual data is never silently promoted to a verified hardware identity.
+- **Uniform-byte analysis (development branch):** report whether `0x00`, `0xFF`, `0x6C`, or any other single byte fills all examined data. A successful complete read may verify the entire *readable logical surface*; quick scans only establish results for the sampled regions. Findings are saved in analysis history.
 
 **Not included yet:** a dedicated *write/read* surface stress test, device-native SSD secure erase, Zebra label printing, and Macintosh HFS/Apple Partition Map creation. SMART/device-log inspection is included, but is not a surface test.
 
@@ -52,7 +55,7 @@ If `unzip` is missing, install it (`sudo apt install unzip`) or use Python's bui
 python3 -m zipfile -e ~/Downloads/drivebench-menu-v0.4.2.zip ~/
 ```
 
-The archive has a top-level `drivebench-menu-v0.4.2` directory. **No virtual environment or pip install is needed.** `requirements.txt` lists no packages (there are no third-party Python dependencies).
+The example commands above refer to the standalone v0.4.2 release archive. **For this development branch**, download the ZIP from GitHub using **Code → Download ZIP** while on `feature/uniform-byte-verification`, extract to a fresh directory, and run `bash run-tests.sh` there. The automatically generated GitHub ZIP has a different directory name. **No virtual environment or pip install is needed.** `requirements.txt` lists no packages (there are no third-party Python dependencies).
 
 Each time you want to run it:
 
@@ -100,6 +103,26 @@ RAW DISK ANALYSIS / RECOVERY
 
 **First, run a quick scan before any wiping or formatting.** It reads samples from the beginning, quarter points, and end of the physical disk. It checks for partition and legacy filesystem markers in the first region, plus common file headers throughout the sampled regions. A full scan then reads the complete accessible disk and counts recognizable signatures (JPEG, PNG, PDF, ZIP, GIF, ELF, SQLite, gzip, RAR) with offsets and a zero-byte ratio. The report does not automatically extract file contents. You may see false positives, embedded files, or fragmented data; **signature hits are *not* guaranteed complete or recoverable files.** High entropy does not demonstrate prior encryption or a successful wipe, and **absence of findings does not mean the drive was never used**.
 
+#### Uniform-byte verification (development branch)
+
+The uniform-byte check runs as part of the existing quick or full evidence scan; **no extra scan command or write operation is required**. The scanner compares every byte delivered by its read process, rather than inferring uniformity from a few sample sectors or a low entropy estimate. It supports **any single byte value** (`0x00`, `0xFF`, `0x6C`, etc.). Its results appear in the scan summary and are saved with the analysis result in the drive's persistent history.
+
+| Result status | Meaning |
+| --- | --- |
+| `VERIFIED_FULL_SURFACE` | A successful full scan read the reported logical disk capacity, and every examined byte matched the reported `byte_hex`. This applies only to the host-readable logical address space. |
+| `SAMPLED_OR_PARTIAL_ONLY` | Every examined byte matched, but coverage was not a completed full-surface scan. Unread areas remain unknown. |
+| `NOT_UNIFORM` | At least two byte values were detected among the examined data. |
+| `NO_DATA` | No bytes were examined. |
+
+For example, if a new full scan confirms the suspected `0x6C` pattern on the Seagate ST318406LW, the summary will include text similar to:
+
+```text
+Uniform byte pattern: 0x6C - VERIFIED across the entire
+<actual byte count>-byte readable logical surface
+```
+
+The example describes a **possible future test result**, not an already established fact. Earlier manual `dd` samples found `0x6C` at the beginning, middle, and end of the Seagate, but these samples do not prove every byte matches. A pattern might come from manufacturing diagnostics, later testing, or an overwrite. **Uniform data alone cannot establish NOS/factory-new status, prior usage, secure sanitization, or the contents of reallocated/hidden physical sectors.** The existing signature-evidence assessment is separate from the uniform-byte result: `NO_RECOGNIZABLE_EVIDENCE_DETECTED` means only that this scanner found no recognized signatures.
+
 The **TestDisk** choice can list the current partition layout or run a scripted `analyze,search` to investigate older/deleted partition structure. DriveBench deliberately omits TestDisk's `write` commands and does not expose its interactive partition-repair interface in this submenu. This is meant for evidence gathering, not altering partition tables.
 
 The **PhotoRec** option performs file carving and writes recovered files into a new output directory on **another physical disk**. A PhotoRec run may produce a very large number of files, some containing sensitive previous-owner data. Handle and dispose of recovered contents responsibly. The optional **GNU ddrescue** feature saves a raw image (`.img`) and resumable progress map (`.map`) on another disk. Neither feature writes to the original drive. DriveBench checks that the selected destination is an existing writable directory on a verifiable local block device, then checks its ancestry so it cannot be on the source disk. It deliberately rejects unverifiable destinations such as overlay, network, and tmpfs mounts; it is still your responsibility to ensure enough free space. External recovery tools run through `sudo` and the outputs may be root-owned.
@@ -110,7 +133,7 @@ Saved raw scan history is also included in a `DRIVEBENCH-REPORT.txt` subsequentl
 
 Dependencies: `dd` from `coreutils` for raw reads, `testdisk` (also provides `photorec`), `gddrescue` (provides `ddrescue`), `sudo`, `lsblk`, and `findmnt`. Select **9. Check Ubuntu components** on the main menu for install commands. No new Python packages are needed.
 
-**Hardware testing limitation:** Read-only behavior, failure handling, and destination guards are covered by simulated tests; the raw scans and external recovery tools have **not** yet been tested on your actual SCSI controller. Start with the Seagate on a nonessential drive, verify the model/serial and active mount status, and run the quick scan first. Avoid repeated scans of a drive that is physically failing; make a ddrescue image first instead. Never use the wipe/format menu until you've finished any desired recovery.
+**Hardware testing status:** The v0.4.2 quick scan and full read-only raw scan ran on a Seagate ST318406LW connected to an Ubuntu SCSI test bench; the full scan read the accessible 17.09 GiB without reporting a read error. The **new uniform-byte verification has not yet been run on that physical disk**. TestDisk/PhotoRec/ddrescue integration and destructive wipe/format functions still require separate physical-hardware validation. Always confirm the current drive model/serial before scanning. Avoid repeated scans of failing media; make an image first where appropriate. Never wipe or format before any desired recovery.
 
 ### Serial-number identification and persistence (new in v0.4.1)
 
@@ -235,7 +258,7 @@ From the project directory:
 python3 -m unittest discover -s tests -v
 ```
 
-Automated tests use mocks and do not touch block devices. v0.4.2 adds raw analysis and destination-safety tests. v0.4.1 added coverage for automatic SCSI/SMART serial discovery, USB bridge rejection, user-supplied serial and asset persistence, manual-only reboot association, and interrupted-operation history. They cover identity/history, protected disks, mounts, SCSI duplicate-ID patterns, SMART summaries, GitHub branch staging, destructive preflight, confirmation cancellation, wipe progress and unsuccessful wipes. **The v0.4 destructive workflows have NOT been tested on a real disk.** Start with a clearly identified sacrificial conventional HDD; confirm safeguards and verify the resulting layout and report before processing anything valuable.
+Automated tests use mocks and do not touch block devices. The uniform-byte feature branch adds regression coverage for full vs. sampled verification, nonuniform data, `0x00`/`0xFF`/`0x6C` patterns, and persistent history. The expanded local suite has passed **86 tests**; the exact GitHub branch and Ubuntu bench still need to be tested before merging. Run `bash run-tests.sh` on a fresh branch checkout (or the Python command above), and check for **86 tests / OK**. v0.4.2 adds raw analysis and destination-safety tests. v0.4.1 added coverage for automatic SCSI/SMART serial discovery, USB bridge rejection, user-supplied serial and asset persistence, manual-only reboot association, and interrupted-operation history. They cover identity/history, protected disks, mounts, SCSI duplicate-ID patterns, SMART summaries, GitHub branch staging, destructive preflight, confirmation cancellation, wipe progress and unsuccessful wipes. **The v0.4 destructive workflows have NOT been tested on a real disk.** Start with a clearly identified sacrificial conventional HDD; confirm safeguards and verify the resulting layout and report before processing anything valuable.
 
 ## For future development
 
