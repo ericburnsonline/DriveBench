@@ -64,7 +64,7 @@ Run as your ordinary user, **not `sudo python3 -m drivebench`**. DriveBench refu
 ## Menus
 
 ```text
-DR I V E B E N C H  v0.4.3  |  Ubuntu drive workstation
+DR I V E B E N C H  v0.4.4  |  Ubuntu drive workstation
  1. Scan disks and partitions
  2. Select drive (inspect / mount / history)
  3. List all mount points and mount status
