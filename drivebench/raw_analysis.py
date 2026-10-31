@@ -161,6 +161,11 @@ class EvidenceCounter:
         self.frequency = collections.Counter()
         self._tail = b''
         self.first_offsets: dict[str, list[int]] = {}
+        # Track one constant byte across *every* byte passed to feed().
+        # A quick scan can only establish uniformity in its sampled regions;
+        # a completed full scan can verify the entire readable logical disk.
+        self._uniform_byte: int | None = None
+        self._uniform_possible = True
 
     def feed(self, data: bytes, start: int, *, contiguous: bool):
         previous = self._tail if contiguous else b''
@@ -180,6 +185,13 @@ class EvidenceCounter:
                 at = merged.find(sig, at + 1)
         self._tail = merged[-TAIL:] if TAIL else b''
         self.zero_bytes += data.count(b'\0')
+        # bytes.count() does the byte-comparison work in C; unlike testing
+        # sampled sectors, this checks every byte of each streamed block.
+        if data and self._uniform_possible:
+            if self._uniform_byte is None:
+                self._uniform_byte = data[0]
+            if data.count(bytes((self._uniform_byte,))) != len(data):
+                self._uniform_possible = False
         self.bytes_read += len(data)
         self.frequency.update(data)
 
@@ -190,21 +202,35 @@ class EvidenceCounter:
                 p = count / self.bytes_read
                 entropy -= p * math.log2(p)
         has_evidence = bool(structures or self.counts)
+        fully_scanned = bool(complete and mode == 'full' and size > 0 and self.bytes_read == size)
+        if not self.bytes_read:
+            uniform = {'status': 'NO_DATA', 'byte_hex': None, 'bytes_checked': 0}
+        elif not self._uniform_possible:
+            uniform = {'status': 'NOT_UNIFORM', 'byte_hex': None, 'bytes_checked': self.bytes_read}
+        else:
+            uniform = {
+                'status': 'VERIFIED_FULL_SURFACE' if fully_scanned else 'SAMPLED_OR_PARTIAL_ONLY',
+                'byte_hex': f'0x{self._uniform_byte:02X}',
+                'bytes_checked': self.bytes_read,
+            }
         return {
             'mode': mode, 'disk_size_bytes': size,
             'bytes_examined': self.bytes_read,
             'coverage_ranges': coverage,
-            'fully_scanned': complete,
+            'fully_scanned': fully_scanned,
+            'uniform_byte_pattern': uniform,
             'zero_fraction_in_examined_bytes': round(self.zero_bytes / self.bytes_read, 6) if self.bytes_read else None,
             'sample_entropy_bits_per_byte': round(entropy, 3),
             'file_signature_candidates': dict(sorted(self.counts.items())),
             'first_signature_offsets_bytes': self.first_offsets,
             'structural_markers': structures,
             'assessment': ('EVIDENCE_DETECTED' if has_evidence else
-                           'NO_RECOGNIZABLE_EVIDENCE_DETECTED' if complete else 'INCONCLUSIVE_SAMPLED_ONLY'),
+                           'NO_RECOGNIZABLE_EVIDENCE_DETECTED' if fully_scanned else 'INCONCLUSIVE_SAMPLED_ONLY'),
             'limitations': ('Signature candidates can be false positives, fragments, or embedded content; '
                             'not necessarily complete files. No matches cannot prove unused/erased. '
-                            'High entropy alone cannot prove encryption or wiping.'),
+                            'High entropy alone cannot prove encryption or wiping. '
+                            'A uniform byte pattern does not establish how or why the data was written, '
+                            'nor certify that the disk was securely sanitized.'),
         }
 
 
@@ -414,6 +440,20 @@ def format_summary(result: dict) -> str:
            f'Zero-filled fraction in examined data: {result.get("zero_fraction_in_examined_bytes")}',
            f'Entropy (sample estimate): {result.get("sample_entropy_bits_per_byte")}',
            'Possible filesystem/partition markers: ' + (', '.join(result.get('structural_markers', [])) or 'none')]
+    uniform = result.get('uniform_byte_pattern')
+    if uniform:
+        status = uniform.get('status')
+        pattern = uniform.get('byte_hex')
+        if status == 'VERIFIED_FULL_SURFACE':
+            out.append(f'Uniform byte pattern: {pattern} - VERIFIED across the entire '
+                       f'{uniform.get("bytes_checked", 0):,}-byte readable logical surface')
+        elif status == 'SAMPLED_OR_PARTIAL_ONLY':
+            out.append(f'Uniform byte pattern: {pattern} in examined data ONLY '
+                       '(not verified across the entire disk)')
+        elif status == 'NOT_UNIFORM':
+            out.append('Uniform byte pattern: NOT UNIFORM across examined data')
+        else:
+            out.append('Uniform byte pattern: unavailable (no data read)')
     for kind, amount in result.get('file_signature_candidates', {}).items():
         out.append(f'  {kind}: {amount} candidate header(s)')
     out.append(result.get('limitations', 'No findings do not prove a drive has never been used.'))

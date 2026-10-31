@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.3 — Uniform-byte verification
+
+- Track a potential constant-byte pattern across **every byte read** during raw evidence scans, including `0x00`, `0xFF`, `0x6C`, or any other byte value.
+- Report `VERIFIED_FULL_SURFACE` only after a completed full scan reads the entire reported logical disk capacity; otherwise distinguish `SAMPLED_OR_PARTIAL_ONLY`, `NOT_UNIFORM`, and `NO_DATA`.
+- Include the byte value and byte count in the scan summary and persistent raw-analysis history; no extra disk-writing action is added.
+- Avoid treating a uniform pattern as proof of factory-new (NOS) condition, prior wiping, or certified sanitization.
+- Add regression tests for uniform patterns, mismatches, incomplete/sampled scans, reporting, and history.
+
+## 0.4.2
+
+- Add read-only quick and complete raw-disk evidence scans, signature candidates, structural hints, zero-byte fraction, and entropy statistics.
+- Add read-only TestDisk partition investigation and guarded PhotoRec/ddrescue recovery/imaging to a separate verified physical disk.
+- Persist raw scan events and results across restarts, recording incomplete operations rather than claiming success.
+- Fix sudo authentication behavior for the full scan to preserve the controlling terminal/session.
+- On an Ubuntu SCSI test bench, successfully read the full 17.09 GiB user-addressable space of a Seagate ST318406LW; quick and full raw scans were exercised on hardware.
+- **Not validated on real hardware yet:** destructive wipe/format operations and external recovery/imaging integration. Continue using a sacrificial HDD for eventual testing.
+
 ## 0.4.1
 
 - Add a Drive Identification menu for automatic native SMART/SCSI serial inquiry, sudo retry, and manual serial / asset ID entry.

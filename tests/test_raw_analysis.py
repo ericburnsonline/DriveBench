@@ -68,6 +68,74 @@ class SignatureTests(unittest.TestCase):
             self.assertLessEqual(a[0]+a[1], b[0])
 
 
+class UniformByteTests(unittest.TestCase):
+    """Uniformity is verified byte-by-byte; it is not proof of NOS or erasure."""
+
+    def test_full_surface_6c_pattern_is_verified(self):
+        counter = raw.EvidenceCounter()
+        counter.feed(b'\x6c' * 1024, 0, contiguous=True)
+        counter.feed(b'\x6c' * 1024, 1024, contiguous=True)
+        report = counter.result(2048, 'full', [[0, 2048]], [], True)
+        self.assertTrue(report['fully_scanned'])
+        self.assertEqual(report['uniform_byte_pattern'], {
+            'status': 'VERIFIED_FULL_SURFACE',
+            'byte_hex': '0x6C',
+            'bytes_checked': 2048,
+        })
+        self.assertEqual(report['assessment'], 'NO_RECOGNIZABLE_EVIDENCE_DETECTED')
+        self.assertIn('does not establish how or why', report['limitations'])
+
+    def test_full_surface_zero_and_ff_patterns(self):
+        for value, expected in ((0, '0x00'), (255, '0xFF')):
+            with self.subTest(byte=value):
+                counter = raw.EvidenceCounter()
+                counter.feed(bytes([value]) * 1024, 0, contiguous=True)
+                report = counter.result(1024, 'full', [[0, 1024]], [], True)
+                self.assertEqual(report['uniform_byte_pattern']['byte_hex'], expected)
+                self.assertEqual(report['uniform_byte_pattern']['status'], 'VERIFIED_FULL_SURFACE')
+
+    def test_single_mismatched_byte_disproves_uniformity(self):
+        counter = raw.EvidenceCounter()
+        counter.feed(b'\x6c' * 1024, 0, contiguous=True)
+        counter.feed(b'\x6c' * 999 + b'\x00' + b'\x6c' * 24, 1024, contiguous=True)
+        report = counter.result(2048, 'full', [[0, 2048]], [], True)
+        self.assertEqual(report['uniform_byte_pattern']['status'], 'NOT_UNIFORM')
+        self.assertIsNone(report['uniform_byte_pattern']['byte_hex'])
+        self.assertEqual(report['uniform_byte_pattern']['bytes_checked'], 2048)
+
+    def test_incomplete_full_scan_must_not_claim_verified(self):
+        counter = raw.EvidenceCounter()
+        counter.feed(b'\x6c' * 1024, 0, contiguous=True)
+        report = counter.result(2048, 'full', [[0, 1024]], [], True)
+        self.assertFalse(report['fully_scanned'])
+        self.assertEqual(report['uniform_byte_pattern']['status'], 'SAMPLED_OR_PARTIAL_ONLY')
+        self.assertEqual(report['uniform_byte_pattern']['bytes_checked'], 1024)
+
+    def test_quick_scan_never_claims_full_verification(self):
+        counter = raw.EvidenceCounter()
+        counter.feed(b'\x6c' * 128, 0, contiguous=False)
+        counter.feed(b'\x6c' * 128, 896, contiguous=False)
+        report = counter.result(1024, 'quick', [[0, 128], [896, 128]], [], True)
+        self.assertFalse(report['fully_scanned'])
+        self.assertEqual(report['uniform_byte_pattern']['status'], 'SAMPLED_OR_PARTIAL_ONLY')
+        self.assertEqual(report['uniform_byte_pattern']['byte_hex'], '0x6C')
+
+    def test_empty_scan_never_claims_uniformity(self):
+        report = raw.EvidenceCounter().result(1024, 'full', [], [], True)
+        self.assertEqual(report['uniform_byte_pattern']['status'], 'NO_DATA')
+        self.assertEqual(report['uniform_byte_pattern']['bytes_checked'], 0)
+        self.assertIsNone(report['uniform_byte_pattern']['byte_hex'])
+
+    def test_summary_labels_full_and_sampled_patterns_differently(self):
+        counter = raw.EvidenceCounter()
+        counter.feed(b'\x6c' * 512, 0, contiguous=True)
+        full = counter.result(512, 'full', [[0, 512]], [], True)
+        sampled = counter.result(1024, 'quick', [[0, 512]], [], False)
+        self.assertIn('0x6C - VERIFIED', raw.format_summary(full))
+        self.assertIn('0x6C in examined data ONLY', raw.format_summary(sampled))
+        self.assertNotIn('VERIFIED across the entire', raw.format_summary(sampled))
+
+
 class PersistentAnalysisTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -104,6 +172,30 @@ class PersistentAnalysisTests(unittest.TestCase):
         ref = store.start_analysis(d, 'full_scan')
         self.assertEqual(ref['record_id'], rid)
         self.assertEqual(store.read_state()['records'][rid]['raw_analysis'][0]['status'], 'IN_PROGRESS')
+
+
+    def test_full_scan_uniform_pattern_saved_in_history(self):
+        disk = sample_disk(size=2048)
+        store.remember_disks([disk])
+
+        def fake_full_scan(device, size, sink, on_progress=None):
+            self.assertEqual(size, 2048)
+            sink.feed(b'\x6c' * 1024, 0, contiguous=True)
+            sink.feed(b'\x6c' * 1024, 1024, contiguous=True)
+            return 0, '', b'\x6c' * 2048
+
+        with patch.object(raw, '_source', return_value=disk), \
+             patch.object(raw, '_sudo_ready'), \
+             patch.object(raw, '_ensure_dd'), \
+             patch.object(raw, '_run_full_scan', side_effect=fake_full_scan):
+            result = raw.scan(disk, full=True)
+        self.assertEqual(result['uniform_byte_pattern']['status'], 'VERIFIED_FULL_SURFACE')
+        state = store.read_state()
+        rid = next(iter(state['records']))
+        saved = state['records'][rid]['raw_analysis'][-1]
+        self.assertEqual(saved['status'], 'COMPLETED')
+        self.assertEqual(saved['result']['uniform_byte_pattern']['byte_hex'], '0x6C')
+        self.assertEqual(saved['result']['uniform_byte_pattern']['bytes_checked'], 2048)
 
     def test_report_includes_saved_raw_scan_evidence(self):
         report = processing._report_body(sample_disk(), record={

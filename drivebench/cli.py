@@ -1,4 +1,4 @@
-"""DriveBench v0.4.2: interactive terminal menus only; no command-line subcommands."""
+"""DriveBench: interactive terminal menus only; no command-line subcommands."""
 from __future__ import annotations
 
 import json
@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from . import __version__
 
 from . import deps, inventory as inv, mounts, store, diagnostics, updates, processing, raw_analysis
 
@@ -639,7 +640,7 @@ def menu() -> None:
     while True:
         try:
             print("\n" + "=" * 58)
-            print(" DR I V E B E N C H  v0.4.2  |  Ubuntu drive workstation")
+            print(f" DR I V E B E N C H  v{__version__}  |  Ubuntu drive workstation")
             print("=" * 58)
             print(" 1. Scan disks and partitions")
             print(" 2. Select drive (inspect / mount / history)")
