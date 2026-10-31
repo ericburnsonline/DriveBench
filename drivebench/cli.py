@@ -1,14 +1,16 @@
+
 """DriveBench: interactive terminal menus only; no command-line subcommands."""
 from __future__ import annotations
 
 import json
 import os
+import subprocess
 import shutil
 import sys
 from pathlib import Path
-from . import __version__
 
-from . import deps, inventory as inv, mounts, store, diagnostics, updates, processing, raw_analysis
+from . import __version__
+from . import deps, inventory as inv, mounts, store, diagnostics, updates, processing, raw_analysis, reports
 
 
 class UserError(RuntimeError):
@@ -473,6 +475,90 @@ def _identification_menu(disk: dict) -> None:
             print('Unknown selection')
 
 
+def _live_pdf_health(disk: dict) -> dict | None:
+    """Optional read-only SMART snapshot, never a destructive command."""
+    if _ask("Add current SMART/SCSI health data to the PDF? (y/N): ").lower() != 'y':
+        return None
+    if not shutil.which('smartctl'):
+        print('smartctl missing: sudo apt install smartmontools')
+        return None
+    dev = diagnostics.checked_device(disk['path'])
+    use_sudo = _ask('Authenticate with sudo for SMART access? (y/N): ').lower() == 'y'
+    if use_sudo:
+        # Prompt in the user's actual terminal; captured subprocess input
+        # would prevent sudo's normal interactive password request.
+        if subprocess.run(['sudo', '-v'], check=False).returncode:
+            print('sudo authentication failed; generating without current SMART data.')
+            return None
+    try:
+        rc, out, err = diagnostics.command(['smartctl', '--all', '--json', dev],
+                                           sudo=use_sudo, timeout=75)
+        parsed = json.loads(out)
+        if not isinstance(parsed, dict):
+            raise ValueError('Expected a SMART JSON object')
+        print('SMART data collected (read-only).')
+        return parsed
+    except (diagnostics.DiagnosticError, ValueError) as exc:
+        print(f'Current SMART data unavailable: {exc}. Saved scan results remain available.')
+        return None
+
+
+def _pdf_report_menu(disk: dict) -> None:
+    """Generate/regenerate a seller-facing PDF, then optionally queue a print."""
+    fresh = next((d for d in snapshot()['disks'] if d['path'] == disk['path']), None)
+    if (not fresh or fresh.get('identity') != disk.get('identity')
+        or fresh.get('serial') != disk.get('serial')
+        or fresh.get('size') != disk.get('size')
+        or (fresh.get('diskseq') and disk.get('diskseq')
+            and fresh['diskseq'] != disk['diskseq'])):
+        raise UserError('Drive identification changed. Rescan before making the PDF.')
+    record_id = fresh.get('record_id')
+    record = store.read_state().get('records', {}).get(record_id)
+    if not record:
+        raise UserError('No associated drive record. Use Identify Drive first to save a record.')
+
+    destination = Path.home() / 'DriveBench-Reports'
+    filename = reports.report_filename(fresh, record)
+    target = destination / filename
+    while True:
+        print('\nPRINTABLE DRIVE REPORT (NO DISK WRITES)')
+        print(' Destination:', target)
+        print(' 1. Generate / regenerate PDF from saved drive results')
+        print(' 2. Print saved PDF through Ubuntu (CUPS)')
+        print(' 0. Back')
+        choice = _ask('Selection: ')
+        if choice == '0':
+            return
+        if choice == '1':
+            replace = target.exists()
+            if replace and _ask('PDF exists. Type REGENERATE to replace it: ') != 'REGENERATE':
+                print('Existing PDF preserved.')
+                continue
+            health = _live_pdf_health(fresh)
+            print('Creating a PDF from saved results; the attached disk is not modified.')
+            saved = reports.generate_pdf(fresh, record, output_dir=destination,
+                                         replace=replace, health=health)
+            print('PDF saved:', saved)
+        elif choice == '2':
+            if not target.is_file():
+                print('Generate a PDF first (option 1).')
+                continue
+            available = reports.list_printers()
+            selected = _pick(['Use Ubuntu default printer'] + available, 'SELECT PRINTER',
+                             lambda x: x)
+            if selected is None:
+                continue
+            chosen = None if selected[0] == 0 else selected[1]
+            print('File:', target)
+            print('Printer:', chosen or 'Ubuntu default')
+            if _ask('Type PRINT to submit one copy: ') != 'PRINT':
+                print('Printing cancelled.')
+                continue
+            print(reports.print_pdf(target, printer=chosen))
+        else:
+            print('Unknown selection')
+
+
 def _disk_menu(disk: dict) -> None:
     while True:
         print("\nDRIVE:", _disk_desc(disk))
@@ -487,6 +573,7 @@ def _disk_menu(disk: dict) -> None:
         print(" 9. Wipe / format / write drive report (DESTRUCTIVE)")
         print("10. Identify drive / manually enter serial and asset ID")
         print("11. Raw disk analysis / evidence & recovery")
+        print("12. Generate / print PDF drive report (non-destructive)")
         print(" 0. Back")
         choice = _ask("Selection: ")
         if choice == "0":
@@ -524,6 +611,9 @@ def _disk_menu(disk: dict) -> None:
                 print(diagnostics.scsi_log_report(current['path'], sudo=priv))
         elif choice == "11":
             _raw_analysis_menu(disk)
+            return
+        elif choice == "12":
+            _pdf_report_menu(disk)
             return
         elif choice == "10":
             _identification_menu(disk)
@@ -576,6 +666,7 @@ def _single_history_menu(record_id: str | None) -> None:
         print(" 1. View complete record")
         print(" 2. Add note")
         print(" 3. Record a wipe done outside DriveBench (operator report only)")
+        print(" 4. Generate / regenerate a PDF from saved history (drive can be disconnected)")
         print(f" Serial: hardware={record.get('last_device', {}).get('serial') or '-'} "
               f"operator={record.get('manual_serial') or '-'} asset={record.get('asset_id') or '-'}")
         print(" 0. Back")
@@ -599,6 +690,20 @@ def _single_history_menu(record_id: str | None) -> None:
             if _ask("Type REPORT to confirm external wipe statement: ") == "REPORT":
                 store.record_manual_wipe(record_id, method, int(raw_passes), note)
                 print("Recorded MANUAL_WIPE_REPORTED, NOT VERIFIED BY DRIVEBENCH")
+        elif choice == '4':
+            stored = record.get('last_device') or {}
+            if not stored:
+                print('No saved disk information is available for this record.')
+                continue
+            dest = Path.home() / 'DriveBench-Reports'
+            filename = reports.report_filename(stored, record)
+            target = dest / filename
+            if target.exists() and _ask('PDF exists. Type REGENERATE to replace: ') != 'REGENERATE':
+                print('Existing PDF preserved.')
+                continue
+            output = reports.generate_pdf(stored, record, output_dir=dest,
+                                          replace=target.exists())
+            print('PDF created from saved history (no live SMART data):', output)
         else:
             print("Unknown selection")
 
