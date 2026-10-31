@@ -1,4 +1,26 @@
+
 # Changelog
+
+## 0.4.4 — Printable PDF drive reports
+
+- Add seller-facing, letter-size PDF drive test reports generated from DriveBench identification, diagnostic, and persistent analysis records.
+- Include manufacturer, model, interface, capacity, hardware serial, optional operator-supplied identifiers, and available completed test results.
+- Include the latest completed full raw-disk scan, including full-surface uniform-byte verification results when available.
+- Support optional collection of current SMART/SCSI health information for inclusion in the generated report. Missing or unavailable test results are never represented as passed.
+- Save reports on the Ubuntu workstation under `~/DriveBench-Reports/`, without modifying or formatting the tested drive.
+- Generate descriptive PDF filenames combining drive manufacturer, interface, model, capacity, and serial number or another explicitly identified record.
+- Allow existing PDFs to be regenerated with confirmation, incorporating additional test results as DriveBench evolves.
+- Support PDF regeneration from persistent drive history even after the physical drive has been disconnected.
+- Add optional CUPS printing using the Ubuntu system's default printer or a selected configured printer, with explicit print confirmation.
+- Include the DriveBench version and GitHub project URL in the PDF footer.
+- Keep PDF reporting separate from the existing on-drive `DRIVEBENCH-REPORT.txt` feature.
+- Exclude recovered file contents, personal filenames, and internal recovery history from seller-facing reports.
+- Add an extensible report-section structure for integrating future diagnostics and test results.
+- Extend the dependency checker to detect optional ReportLab (`python3-reportlab`) and CUPS (`cups-client`) requirements without preventing other DriveBench functionality.
+- Add 14 automated regression tests covering report generation, filenames, regeneration, CUPS commands, privacy-conscious reporting, and menu integration.
+- Reserve alternate label sizes and antistatic-bag label layouts for a future enhancement.
+
+**Reporting limitations:** PDF reports summarize recorded diagnostic information and do not certify secure sanitization, factory-new condition, or the absence of previously stored user data. Generating or printing a PDF does not alter the source drive.
 
 ## 0.4.3 — Uniform-byte verification
 
