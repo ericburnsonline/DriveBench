@@ -1,10 +1,13 @@
-"""Explain missing Ubuntu dependencies without requiring Python pip packages."""
+
+"""Check Ubuntu dependencies, including optional PDF reporting and printing."""
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 from pathlib import Path
 
+# Each entry: executable, Ubuntu package, core requirement, purpose.
 COMMANDS = [
     ("python3", "python3", True, "Python 3 runtime"),
     ("lsblk", "util-linux", True, "disk/partition inventory"),
@@ -32,39 +35,67 @@ COMMANDS = [
     ("testdisk", "testdisk", False, "read-only investigation of lost partitions"),
     ("photorec", "testdisk", False, "recover file contents to another drive"),
     ("ddrescue", "gddrescue", False, "create a disk image with resumable mapfile"),
+    ("lp", "cups-client", False, "send optional PDF reports to a CUPS printer"),
+    ("lpstat", "cups-client", False, "list configured CUPS printers"),
+]
+
+# Python modules are checked using THIS Python interpreter, not PATH.
+# Each entry: import name, Ubuntu package, core requirement, purpose.
+PYTHON_MODULES = [
+    ("reportlab", "python3-reportlab", False, "generate PDF drive test reports"),
 ]
 
 
+def _module_installed(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError, AttributeError):
+        return False
+
+
 def missing() -> list[tuple[str, str, bool, str]]:
-    return [entry for entry in COMMANDS if not shutil.which(entry[0])]
+    """Include optional modules in the same four-field format as commands."""
+    commands = [entry for entry in COMMANDS if not shutil.which(entry[0])]
+    modules = [("python:" + name, package, required, purpose)
+               for name, package, required, purpose in PYTHON_MODULES
+               if not _module_installed(name)]
+    return commands + modules
 
 
 def instructions(missing_commands: list[tuple[str, str, bool, str]] | None = None) -> str:
     entries = missing() if missing_commands is None else missing_commands
     if not entries:
-        return "All listed Ubuntu commands are installed."
-    packages = sorted({package for _cmd, package, _required, _desc in entries})
-    lines = ["Missing Ubuntu components:"]
-    for cmd, pkg, required, desc in entries:
-        lines.append(f"  {cmd:<12} {desc} ({'required' if required else 'optional'}; package: {pkg})")
+        return "All listed Ubuntu components are installed."
+    packages = sorted({package for _name, package, _required, _purpose in entries})
+    lines = ["Missing Ubuntu components (optional items do not prevent DriveBench from running):"]
+    for name, package, required, purpose in entries:
+        status = "required" if required else "optional"
+        lines.append(f"  {name:<18} {purpose} ({status}; package: {package})")
     lines.extend(["", "Install missing packages from an administrator terminal:",
                   "  sudo apt update", "  sudo apt install " + " ".join(packages)])
-    if any(cmd == "sudo" for cmd, *_ in entries):
-        lines.append("If 'sudo' is unavailable, ask a system administrator to install it using an administrative shell.")
+    if any(name == "sudo" for name, *_ in entries):
+        lines.append("If sudo is unavailable, ask an administrator to install it from an administrative shell.")
     return "\n".join(lines)
 
 
 def doctor() -> None:
     print("\nUBUNTU DEPENDENCY CHECK")
-    for cmd, package, required, purpose in COMMANDS:
-        where = shutil.which(cmd)
-        print(f"  {cmd:<12} {'OK' if where else 'MISSING'}  [{package}] {purpose}")
-    print("  sysfs:      " + ("OK" if Path('/sys/class/block').exists() else "MISSING (/sys/class/block)"))
-    print("  user:       " + str(os.geteuid()) + " (must not be 0/root)")
-    m = missing()
-    if m:
-        print("\n" + instructions(m))
+    for name, package, required, purpose in COMMANDS:
+        available = shutil.which(name) is not None
+        print(f"  {name:<18} {'OK' if available else 'MISSING'} "
+              f"[{'required' if required else 'optional'}: {package}] {purpose}")
+    for name, package, required, purpose in PYTHON_MODULES:
+        available = _module_installed(name)
+        print(f"  {'python:' + name:<18} {'OK' if available else 'MISSING'} "
+              f"[{'required' if required else 'optional'}: {package}] {purpose}")
+    print("  sysfs:              " + ("OK" if Path('/sys/class/block').exists()
+                                       else "MISSING (/sys/class/block)"))
+    print("  user:               " + str(os.geteuid()) + " (must not be 0/root)")
+    problems = missing()
+    if problems:
+        print("\n" + instructions(problems))
     else:
-        print("\nNo additional Python packages are required. No pip installation needed.")
-    print("\nMounting will prompt through sudo for your password if required."
-          " Mount/unmount, read-only diagnostics, wiping, formatting and report writing may use sudo only as selected.")
+        print("\nAll checked Ubuntu components are installed.")
+    print("\nPDF reports and CUPS printing are optional. "
+          "ReportLab is checked in the currently running Python environment.")
+    print("Mounting may request sudo authentication. Drive operations elevate only when selected.")
