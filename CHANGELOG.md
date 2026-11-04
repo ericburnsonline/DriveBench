@@ -1,6 +1,34 @@
 
 # Changelog
 
+## 0.4.5 — Antistatic bag label PDFs
+
+- Add printable PDF identification labels for antistatic drive bags.
+- Support two label sizes:
+  - **2.25 × 4 inches** — default compact label, intended for Zebra GK420t printers.
+  - **4 × 6 inches** — larger alternative.
+- Generate labels using the same saved drive identification and analysis records as the full-page PDF reports.
+- Include drive manufacturer, model, interface, decimal capacity, and available serial number.
+- Distinguish hardware-reported serial numbers from operator-supplied serial numbers and asset IDs.
+- Include the DriveBench inventory record ID when available.
+- Include a concise summary of the latest completed full logical-surface scan.
+- Report verified uniform-byte patterns, including values such as `0x6C`, only when full-surface verification requirements are satisfied.
+- Prevent incomplete, failed, or partially sampled scans from being presented as completed full-surface verification.
+- Include a reference to the enclosed detailed report, the DriveBench version, and the GitHub project URL.
+- Generate PDF pages at the exact selected label dimensions without automatically printing.
+- Save labels under `~/DriveBench-Reports/labels/`, separate from letter-size test reports.
+- Generate deterministic filenames using drive identification and label dimensions.
+- Support safe regeneration with explicit confirmation before replacing existing PDFs.
+- Allow label generation from persistent drive history after the physical drive has been disconnected.
+- Add **13. Generate antistatic bag label PDF** to the selected-drive menu.
+- Add **5. Generate / regenerate an antistatic bag label PDF** to the saved drive-history menu.
+- Reject label fields that cannot fit rather than silently truncating important identifiers.
+- Keep recovered filenames, personal data, and internal recovery history out of seller-facing labels.
+- Add 23 automated regression tests covering label dimensions, identification, completed scan results, PDF generation, regeneration, privacy safeguards, and menu integration.
+- Keep direct Zebra printing outside the scope of this release; generated PDFs can initially be printed using an existing Windows Zebra printer driver.
+
+**Label limitations:** Bag labels summarize recorded diagnostic results. They do not certify secure sanitization, factory-new condition, or the absence of previously stored data. Generating a label does not modify the source disk.
+
 ## 0.4.4 — Printable PDF drive reports
 
 - Add seller-facing, letter-size PDF drive test reports generated from DriveBench identification, diagnostic, and persistent analysis records.
