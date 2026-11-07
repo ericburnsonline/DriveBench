@@ -562,14 +562,30 @@ def _pdf_report_menu(disk: dict) -> None:
 
 def _create_bag_label(disk: dict, record: dict) -> None:
     """Create a label PDF from live or saved metadata, without printing."""
-    sizes = ["2.25x4", "4x6"]
-    selected = _pick(sizes, "ANTISTATIC BAG LABEL SIZE",
-                     lambda size: size + " inches" +
-                     (" (recommended for GK420t)" if size == "2.25x4" else ""))
+    sizes = ["3x1", "2.25x4", "4x6"]
+
+    def size_description(size: str) -> str:
+        descriptions = {
+            "3x1": "3 x 1 inches (compact)",
+            "2.25x4": "2.25 x 4 inches",
+            "4x6": "4 x 6 inches",
+        }
+        return descriptions[size]
+
+    selected = _pick(
+        sizes,
+        "ANTISTATIC BAG LABEL SIZE",
+        size_description,
+    )
     if selected is None:
         return
 
     size = selected[1]
+    if size not in labels.LABEL_SIZES:
+        raise UserError(
+            f"Label size {size} is unavailable in the installed labels module."
+        )
+
     destination = Path.home() / "DriveBench-Reports" / "labels"
     filename = labels.label_filename(disk, record, size=size)
     target = destination / filename
@@ -586,8 +602,13 @@ def _create_bag_label(disk: dict, record: dict) -> None:
             print("Existing label preserved.")
             return
 
-    output = labels.generate_label(disk, record, size=size,
-                                   output_dir=destination, replace=replace)
+    output = labels.generate_label(
+        disk,
+        record,
+        size=size,
+        output_dir=destination,
+        replace=replace,
+    )
     print("Bag label PDF saved:", output)
     print("This PDF has the selected label dimensions.")
     print("Print at actual size (100%), with page scaling disabled.")
