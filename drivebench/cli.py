@@ -1,4 +1,3 @@
-
 """DriveBench: interactive terminal menus only; no command-line subcommands."""
 from __future__ import annotations
 
@@ -10,7 +9,10 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from . import deps, inventory as inv, mounts, store, diagnostics, updates, processing, raw_analysis, reports
+from . import (
+    deps, inventory as inv, mounts, store, diagnostics, updates,
+    processing, raw_analysis, reports, labels
+)
 
 
 class UserError(RuntimeError):
@@ -485,8 +487,6 @@ def _live_pdf_health(disk: dict) -> dict | None:
     dev = diagnostics.checked_device(disk['path'])
     use_sudo = _ask('Authenticate with sudo for SMART access? (y/N): ').lower() == 'y'
     if use_sudo:
-        # Prompt in the user's actual terminal; captured subprocess input
-        # would prevent sudo's normal interactive password request.
         if subprocess.run(['sudo', '-v'], check=False).returncode:
             print('sudo authentication failed; generating without current SMART data.')
             return None
@@ -559,6 +559,81 @@ def _pdf_report_menu(disk: dict) -> None:
             print('Unknown selection')
 
 
+def _create_bag_label(disk: dict, record: dict) -> None:
+    """Create a label PDF from live or saved metadata, without printing."""
+    sizes = ["3x1", "2.25x4", "4x6"]
+
+    def size_description(size: str) -> str:
+        descriptions = {
+            "3x1": "3 x 1 inches (compact)",
+            "2.25x4": "2.25 x 4 inches",
+            "4x6": "4 x 6 inches",
+        }
+        return descriptions[size]
+
+    selected = _pick(
+        sizes,
+        "ANTISTATIC BAG LABEL SIZE",
+        size_description,
+    )
+    if selected is None:
+        return
+
+    size = selected[1]
+    if size not in labels.LABEL_SIZES:
+        raise UserError(
+            f"Label size {size} is unavailable in the installed labels module."
+        )
+
+    destination = Path.home() / "DriveBench-Reports" / "labels"
+    filename = labels.label_filename(disk, record, size=size)
+    target = destination / filename
+
+    print("\nANTISTATIC BAG LABEL")
+    print(" Drive:", disk.get("model") or "(unknown)")
+    print(" Size:", size, "inches")
+    print(" PDF:", target)
+    print(" No source-drive writes or printer jobs will be performed.")
+
+    replace = target.exists()
+    if replace:
+        if _ask("Label already exists. Type REGENERATE to replace it: ") != "REGENERATE":
+            print("Existing label preserved.")
+            return
+
+    output = labels.generate_label(
+        disk,
+        record,
+        size=size,
+        output_dir=destination,
+        replace=replace,
+    )
+    print("Bag label PDF saved:", output)
+    print("This PDF has the selected label dimensions.")
+    print("Print at actual size (100%), with page scaling disabled.")
+    print("Printing to the Zebra is not submitted automatically.")
+
+
+def _bag_label_menu(disk: dict) -> None:
+    """Verify the selected disk still matches its saved record."""
+    fresh = next((d for d in snapshot()['disks']
+                  if d['path'] == disk['path']), None)
+    if (not fresh
+        or not processing._same(disk, fresh)
+        or fresh.get('record_id') != disk.get('record_id')):
+        raise UserError("Drive identity or saved record changed. Rescan before generating the label.")
+
+    record_id = fresh.get('record_id')
+    if not record_id:
+        raise UserError("No associated drive record. Identify the drive first.")
+
+    record = store.read_state().get('records', {}).get(record_id)
+    if not record:
+        raise UserError("Saved drive record not found.")
+
+    _create_bag_label(fresh, record)
+
+
 def _disk_menu(disk: dict) -> None:
     while True:
         print("\nDRIVE:", _disk_desc(disk))
@@ -574,6 +649,7 @@ def _disk_menu(disk: dict) -> None:
         print("10. Identify drive / manually enter serial and asset ID")
         print("11. Raw disk analysis / evidence & recovery")
         print("12. Generate / print PDF drive report (non-destructive)")
+        print("13. Generate antistatic bag label PDF (non-destructive)")
         print(" 0. Back")
         choice = _ask("Selection: ")
         if choice == "0":
@@ -586,7 +662,6 @@ def _disk_menu(disk: dict) -> None:
             if not disk["partitions"]:
                 print("No partitions discovered")
         elif choice == "3":
-            # Refresh and match exact scan path + hardware identity + capacity to limit swaps.
             current = next((d for d in snapshot()["disks"] if d["path"] == disk["path"]), None)
             if (not current or current["identity"] != disk["identity"] or
                     current["size"] != disk["size"] or current["serial"] != disk["serial"]):
@@ -615,13 +690,14 @@ def _disk_menu(disk: dict) -> None:
         elif choice == "12":
             _pdf_report_menu(disk)
             return
+        elif choice == "13":
+            _bag_label_menu(disk)
+            return
         elif choice == "10":
             _identification_menu(disk)
-            # Identification can change hardware identity and history linkage.
             return
         elif choice == "9":
             _processing_menu(disk)
-            # Layout, mount points and status may have changed. Return to scan.
             return
         else:
             print("Unknown selection")
@@ -667,6 +743,7 @@ def _single_history_menu(record_id: str | None) -> None:
         print(" 2. Add note")
         print(" 3. Record a wipe done outside DriveBench (operator report only)")
         print(" 4. Generate / regenerate a PDF from saved history (drive can be disconnected)")
+        print(" 5. Generate / regenerate an antistatic bag label PDF")
         print(f" Serial: hardware={record.get('last_device', {}).get('serial') or '-'} "
               f"operator={record.get('manual_serial') or '-'} asset={record.get('asset_id') or '-'}")
         print(" 0. Back")
@@ -704,6 +781,12 @@ def _single_history_menu(record_id: str | None) -> None:
             output = reports.generate_pdf(stored, record, output_dir=dest,
                                           replace=target.exists())
             print('PDF created from saved history (no live SMART data):', output)
+        elif choice == '5':
+            stored = record.get('last_device') or {}
+            if not stored:
+                print('No saved disk information is available for this record.')
+                continue
+            _create_bag_label(stored, record)
         else:
             print("Unknown selection")
 
