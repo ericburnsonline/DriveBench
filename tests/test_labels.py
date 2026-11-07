@@ -1,6 +1,7 @@
 
-"""Non-destructive tests for antistatic bag PDF labels and CLI menus."""
+"""Non-destructive tests for DriveBench bag-label PDFs and CLI menus."""
 
+import re
 import tempfile
 import unittest
 from dataclasses import asdict
@@ -44,7 +45,6 @@ RECORD = {
                     "status": "VERIFIED_FULL_SURFACE",
                     "byte_hex": "0x6C",
                 },
-                "assessment": "NO_RECOGNIZABLE_EVIDENCE_DETECTED",
             },
         },
         {
@@ -65,7 +65,7 @@ RECORD = {
 
 
 def record_with_result(**changes):
-    """Build an independent saved record with one completed full scan."""
+    """Return a new record containing one completed full-scan result."""
     scan = dict(RECORD["raw_analysis"][0])
     scan["result"] = dict(scan["result"], **changes)
     return dict(RECORD, raw_analysis=[scan])
@@ -101,11 +101,11 @@ class LabelDataTests(unittest.TestCase):
         self.assertNotIn("0xFF", data.pattern_summary)
 
     def test_no_completed_scan_does_not_claim_success(self):
-        rec = dict(
+        record = dict(
             RECORD,
             raw_analysis=[RECORD["raw_analysis"][1]]
         )
-        data = labels.label_data(DISK, rec)
+        data = labels.label_data(DISK, record)
 
         self.assertIn("not recorded", data.scan_summary)
         self.assertEqual(
@@ -114,15 +114,21 @@ class LabelDataTests(unittest.TestCase):
         )
 
     def test_partial_scan_cannot_claim_full_surface(self):
-        rec = record_with_result(fully_scanned=False)
-        data = labels.label_data(DISK, rec)
+        data = labels.label_data(
+            DISK,
+            record_with_result(fully_scanned=False)
+        )
 
         self.assertIn("not verified", data.scan_summary)
         self.assertNotIn("0x6C", data.pattern_summary)
 
-    def test_byte_count_must_match_disk_capacity(self):
-        rec = record_with_result(bytes_examined=CAPACITY - 512)
-        data = labels.label_data(DISK, rec)
+    def test_byte_count_must_match_capacity(self):
+        data = labels.label_data(
+            DISK,
+            record_with_result(
+                bytes_examined=CAPACITY - 512
+            )
+        )
 
         self.assertIn("not verified", data.scan_summary)
         self.assertEqual(
@@ -130,66 +136,69 @@ class LabelDataTests(unittest.TestCase):
             "Media pattern: not verified"
         )
 
-    def test_unverified_pattern_not_presented_as_verified(self):
-        rec = record_with_result(
+    def test_sampled_pattern_not_called_verified(self):
+        record = record_with_result(
             uniform_byte_pattern={
                 "status": "SAMPLED_OR_PARTIAL_ONLY",
                 "byte_hex": "0x6C"
             }
         )
-        data = labels.label_data(DISK, rec)
 
         self.assertEqual(
-            data.pattern_summary,
+            labels.label_data(DISK, record).pattern_summary,
             "Media pattern: not verified"
         )
 
-    def test_nonuniform_result_is_described_correctly(self):
-        rec = record_with_result(
-            uniform_byte_pattern={"status": "NOT_UNIFORM"}
+    def test_nonuniform_result(self):
+        record = record_with_result(
+            uniform_byte_pattern={
+                "status": "NOT_UNIFORM"
+            }
         )
 
         self.assertEqual(
-            labels.label_data(DISK, rec).pattern_summary,
+            labels.label_data(DISK, record).pattern_summary,
             "Media pattern: not uniform"
         )
 
-    def test_operator_serial_is_not_mislabeled_as_hardware(self):
+    def test_manual_serial_is_not_hardware_serial(self):
         disk = dict(DISK, serial="")
-        rec = dict(
+        record = dict(
             RECORD,
             last_device=disk,
             manual_serial="LABEL123"
         )
-        data = labels.label_data(disk, rec)
+        data = labels.label_data(disk, record)
 
         self.assertEqual(data.serial, "LABEL123")
         self.assertIn("OPERATOR", data.serial_caption)
 
     def test_asset_id_fallback(self):
         disk = dict(DISK, serial="")
-        rec = dict(
+        record = dict(
             RECORD,
             last_device=disk,
             asset_id="BIN-42"
         )
-        data = labels.label_data(disk, rec)
+        data = labels.label_data(disk, record)
 
         self.assertEqual(data.serial, "BIN-42")
         self.assertIn("ASSET ID", data.serial_caption)
 
-    def test_no_recovered_filenames_or_notes_on_label(self):
-        rec = dict(
+    def test_recovered_names_and_notes_excluded(self):
+        record = dict(
             RECORD,
             notes=["private customer information"],
             recovered_files=["private-wallet.dat"]
         )
-        printed = str(asdict(labels.label_data(DISK, rec)))
+        output = str(
+            asdict(labels.label_data(DISK, record))
+        )
 
-        self.assertNotIn("private customer", printed)
-        self.assertNotIn("wallet.dat", printed)
+        self.assertNotIn("private customer", output)
+        self.assertNotIn("wallet.dat", output)
 
-    def test_filename_defaults_to_smaller_label(self):
+    def test_default_filename_remains_2p25x4(self):
         name = labels.label_filename(DISK, RECORD)
 
         self.assertTrue(
@@ -202,18 +211,23 @@ class LabelDataTests(unittest.TestCase):
         )
         self.assertIn(SERIAL, name)
 
-    def test_large_label_has_distinct_filename(self):
-        name = labels.label_filename(
-            DISK, RECORD, size="4x6"
+    def test_three_sizes_have_distinct_filenames(self):
+        names = {
+            size: labels.label_filename(
+                DISK, RECORD, size=size
+            )
+            for size in ("3x1", "2.25x4", "4x6")
+        }
+
+        self.assertEqual(len(set(names.values())), 3)
+        self.assertTrue(
+            names["3x1"].endswith("-bag-label-3x1.pdf")
+        )
+        self.assertTrue(
+            names["4x6"].endswith("-bag-label-4x6.pdf")
         )
 
-        self.assertTrue(name.endswith("-bag-label-4x6.pdf"))
-        self.assertNotEqual(
-            name,
-            labels.label_filename(DISK, RECORD)
-        )
-
-    def test_unknown_label_size_is_rejected(self):
+    def test_unknown_size_rejected(self):
         with self.assertRaises(reports.ReportError):
             labels.label_filename(
                 DISK, RECORD, size="Letter"
@@ -231,11 +245,14 @@ class LabelDataTests(unittest.TestCase):
 
 class LabelPDFTests(unittest.TestCase):
 
-    def test_both_pdfs_have_correct_physical_page_sizes(self):
-        for size, width, height in (
+    def test_all_three_pdfs_have_correct_physical_page_sizes(self):
+        sizes = (
+            ("3x1", 216, 72),
             ("2.25x4", 162, 288),
             ("4x6", 288, 432)
-        ):
+        )
+
+        for size, width, height in sizes:
             with self.subTest(size=size):
                 with tempfile.TemporaryDirectory() as tmp:
                     path = labels.generate_label(
@@ -248,24 +265,142 @@ class LabelPDFTests(unittest.TestCase):
 
                     self.assertTrue(body.startswith(b"%PDF-"))
 
-                    expression = (
-                        rb"/MediaBox\s*\[\s*0\s+0\s+"
-                        + str(width).encode()
-                        + rb"\s+"
-                        + str(height).encode()
-                        + rb"\s*\]"
+                    media_box = re.search(
+                        rb"/MediaBox\s*\[\s*"
+                        rb"([\d.]+)\s+([\d.]+)\s+"
+                        rb"([\d.]+)\s+([\d.]+)\s*\]",
+                        body
                     )
-                    self.assertRegex(body, expression)
+
+                    self.assertIsNotNone(
+                        media_box,
+                        "PDF has no /MediaBox"
+                    )
+
+                    coords = [
+                        float(x) for x in media_box.groups()
+                    ]
+                    self.assertEqual(
+                        coords,
+                        [0.0, 0.0, float(width), float(height)]
+                    )
 
                     self.assertIn(
                         b"github.com/ericburnsonline/DriveBench",
                         body
                     )
 
-    def test_label_is_private_and_requires_explicit_regeneration(self):
+    def test_compact_layout_contains_full_hardware_serial_and_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(
+                labels,
+                "_fit_text",
+                wraps=labels._fit_text
+            ) as draw:
+                labels.generate_label(
+                    DISK,
+                    RECORD,
+                    size="3x1",
+                    output_dir=tmp
+                )
+
+            text = "\n".join(
+                str(call.args[1])
+                for call in draw.call_args_list
+            )
+
+            self.assertIn("SEAGATE", text)
+            self.assertIn("ST318406LW", text)
+            self.assertIn("DB-000002", text)
+            self.assertIn("HW SN: " + SERIAL, text)
+            self.assertIn("FULL READ COMPLETE", text)
+            self.assertIn("0x6C", text)
+            self.assertIn("See full report", text)
+
+    def test_compact_layout_marks_operator_serial(self):
+        disk = dict(DISK, serial="")
+        record = dict(
+            RECORD,
+            last_device=disk,
+            manual_serial="LABEL123"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(
+                labels,
+                "_fit_text",
+                wraps=labels._fit_text
+            ) as draw:
+                labels.generate_label(
+                    disk,
+                    record,
+                    size="3x1",
+                    output_dir=tmp
+                )
+
+            text = "\n".join(
+                str(call.args[1])
+                for call in draw.call_args_list
+            )
+
+            self.assertIn(
+                "OPERATOR ID: LABEL123",
+                text
+            )
+            self.assertNotIn("HW SN:", text)
+
+    def test_compact_layout_does_not_claim_unverified_read_passed(self):
+        record = record_with_result(
+            fully_scanned=False
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(
+                labels,
+                "_fit_text",
+                wraps=labels._fit_text
+            ) as draw:
+                labels.generate_label(
+                    DISK,
+                    record,
+                    size="3x1",
+                    output_dir=tmp
+                )
+
+            text = "\n".join(
+                str(call.args[1])
+                for call in draw.call_args_list
+            )
+
+            self.assertIn("SCAN NOT VERIFIED", text)
+            self.assertIn("Pattern not verified", text)
+            self.assertNotIn("FULL READ COMPLETE", text)
+
+    def test_compact_refuses_serial_that_cannot_fit(self):
+        disk = dict(
+            DISK,
+            serial="Z" * 500
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(
+                reports.ReportError,
+                "too long"
+            ):
+                labels.generate_label(
+                    disk,
+                    RECORD,
+                    size="3x1",
+                    output_dir=tmp
+                )
+
+    def test_label_private_and_regeneration_requires_explicit_replace(self):
         with tempfile.TemporaryDirectory() as tmp:
             first = labels.generate_label(
-                DISK, RECORD, output_dir=tmp
+                DISK,
+                RECORD,
+                size="3x1",
+                output_dir=tmp
             )
 
             self.assertEqual(
@@ -275,12 +410,16 @@ class LabelPDFTests(unittest.TestCase):
 
             with self.assertRaises(reports.ReportError):
                 labels.generate_label(
-                    DISK, RECORD, output_dir=tmp
+                    DISK,
+                    RECORD,
+                    size="3x1",
+                    output_dir=tmp
                 )
 
             second = labels.generate_label(
                 DISK,
                 RECORD,
+                size="3x1",
                 output_dir=tmp,
                 replace=True
             )
@@ -291,19 +430,27 @@ class LabelPDFTests(unittest.TestCase):
     def test_label_generation_does_not_print(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(
-                reports, "print_pdf"
+                reports,
+                "print_pdf"
             ) as printer:
                 labels.generate_label(
-                    DISK, RECORD, output_dir=tmp
+                    DISK,
+                    RECORD,
+                    size="3x1",
+                    output_dir=tmp
                 )
                 printer.assert_not_called()
 
-    def test_serial_too_long_to_fit_is_rejected_not_truncated(self):
-        disk = dict(DISK, serial="Z" * 500)
+    def test_long_serial_is_not_silently_truncated_on_large_labels(self):
+        disk = dict(
+            DISK,
+            serial="Z" * 500
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(
-                reports.ReportError, "too long"
+                reports.ReportError,
+                "too long"
             ):
                 labels.generate_label(
                     disk,
@@ -314,58 +461,129 @@ class LabelPDFTests(unittest.TestCase):
 
 class LabelMenuTests(unittest.TestCase):
 
-    def test_drive_menu_opens_label_option_13(self):
+    def test_drive_menu_option_13_opens_labels(self):
         with patch.object(
-            cli, "_ask", return_value="13"
+            cli,
+            "_ask",
+            return_value="13"
         ), patch.object(
-            cli, "_bag_label_menu"
-        ) as menu:
+            cli,
+            "_bag_label_menu"
+        ) as selected:
             cli._disk_menu(dict(DISK))
 
-        menu.assert_called_once_with(DISK)
+        selected.assert_called_once_with(DISK)
 
-    def test_history_menu_can_generate_label_when_disconnected(self):
+    def test_history_option_5_works_without_connected_drive(self):
         with patch.object(
             cli.store,
             "read_state",
             return_value={
-                "records": {RECORD["id"]: RECORD}
+                "records": {
+                    RECORD["id"]: RECORD
+                }
             }
         ), patch.object(
-            cli, "_ask", side_effect=["5", "0"]
+            cli,
+            "_ask",
+            side_effect=["5", "0"]
         ), patch.object(
-            cli, "_create_bag_label"
-        ) as generate:
-            cli._single_history_menu(RECORD["id"])
+            cli,
+            "_create_bag_label"
+        ) as create:
+            cli._single_history_menu(
+                RECORD["id"]
+            )
 
-        generate.assert_called_once_with(DISK, RECORD)
+        create.assert_called_once_with(DISK, RECORD)
 
-    def test_live_label_refuses_changed_drive_identity(self):
+    def test_live_label_refuses_changed_identity(self):
         with patch.object(
             cli,
             "snapshot",
-            return_value={"disks": [dict(DISK)]}
+            return_value={
+                "disks": [dict(DISK)]
+            }
         ), patch.object(
             cli.processing,
             "_same",
             return_value=False
         ):
             with self.assertRaisesRegex(
-                cli.UserError, "identity"
+                cli.UserError,
+                "identity"
             ):
                 cli._bag_label_menu(DISK)
 
-    def test_existing_label_requires_regenerate_confirmation(self):
+    def test_size_menu_lists_all_three_formats_compact_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(
+                cli.Path,
+                "home",
+                return_value=Path(tmp)
+            ), patch.object(
+                cli,
+                "_pick",
+                return_value=None
+            ) as choose:
+                cli._create_bag_label(DISK, RECORD)
+
+        sizes = choose.call_args.args[0]
+
+        self.assertEqual(
+            sizes,
+            ["3x1", "2.25x4", "4x6"]
+        )
+
+    def test_size_menu_passes_three_by_one_to_generator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(
+                cli.Path,
+                "home",
+                return_value=Path(tmp)
+            ), patch.object(
+                cli,
+                "_pick",
+                return_value=(0, "3x1")
+            ), patch.object(
+                cli.labels,
+                "generate_label"
+            ) as generate, patch.object(
+                reports,
+                "print_pdf"
+            ) as printer:
+                generate.return_value = (
+                    Path(tmp) / "label.pdf"
+                )
+
+                cli._create_bag_label(DISK, RECORD)
+
+        self.assertEqual(
+            generate.call_args.kwargs["size"],
+            "3x1"
+        )
+        self.assertFalse(
+            generate.call_args.kwargs["replace"]
+        )
+        printer.assert_not_called()
+
+    def test_existing_compact_label_needs_regenerate_confirmation(self):
         with tempfile.TemporaryDirectory() as tmp:
             target_dir = (
-                Path(tmp) / "DriveBench-Reports" / "labels"
+                Path(tmp)
+                / "DriveBench-Reports"
+                / "labels"
             )
             target_dir.mkdir(parents=True)
 
             target = target_dir / labels.label_filename(
-                DISK, RECORD
+                DISK,
+                RECORD,
+                size="3x1"
             )
-            target.write_bytes(b"keep this PDF")
+            target.write_bytes(
+                b"keep the existing label"
+            )
 
             with patch.object(
                 cli.Path,
@@ -374,7 +592,7 @@ class LabelMenuTests(unittest.TestCase):
             ), patch.object(
                 cli,
                 "_pick",
-                return_value=(0, "2.25x4")
+                return_value=(0, "3x1")
             ), patch.object(
                 cli,
                 "_ask",
@@ -388,10 +606,10 @@ class LabelMenuTests(unittest.TestCase):
             generate.assert_not_called()
             self.assertEqual(
                 target.read_bytes(),
-                b"keep this PDF"
+                b"keep the existing label"
             )
 
-    def test_new_label_uses_default_small_size_and_no_print(self):
+    def test_legacy_default_size_still_available_from_menu(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(
                 cli.Path,
@@ -400,29 +618,20 @@ class LabelMenuTests(unittest.TestCase):
             ), patch.object(
                 cli,
                 "_pick",
-                return_value=(0, "2.25x4")
+                return_value=(1, "2.25x4")
             ), patch.object(
                 cli.labels,
                 "generate_label"
-            ) as generate, patch.object(
-                reports,
-                "print_pdf"
-            ) as printer:
-
+            ) as generate:
                 generate.return_value = (
                     Path(tmp) / "label.pdf"
                 )
                 cli._create_bag_label(DISK, RECORD)
 
-            self.assertEqual(
-                generate.call_args.kwargs["size"],
-                "2.25x4"
-            )
-            self.assertIs(
-                generate.call_args.kwargs["replace"],
-                False
-            )
-            printer.assert_not_called()
+        self.assertEqual(
+            generate.call_args.kwargs["size"],
+            "2.25x4"
+        )
 
 
 if __name__ == "__main__":
