@@ -1,107 +1,122 @@
 
 # DriveBench: Ubuntu drive inspection, recovery, and reporting
 
-DriveBench is a **terminal menu-based** utility for an Ubuntu storage-test bench with SCSI adapters, USB-to-IDE/SATA bridges, and normal SATA/IDE drives.
+DriveBench is a terminal-based drive inspection and preparation utility for Ubuntu Linux. It is designed for workstations testing SCSI, IDE, SATA, and USB-connected storage devices.
 
-**There are no CLI subcommands to learn.** Start it with `bash start-drivebench.sh` (or `python3 -m drivebench` from the project directory). All functions are selected using numbered menus.
+DriveBench uses numbered menus rather than command-line subcommands.
+
+Launch from the project directory:
+
+```bash
+bash start-drivebench.sh
+```
+
+Or:
+
+```bash
+python3 -m drivebench
+```
+
+**Always run DriveBench as your normal user, not as root.**
 
 ## Features
 
-- Discover disks, partitions, bus types, serial numbers, SCSI host/target information, and SCSI/SAS/RAID controllers.
-- Persistent disk and controller exclusions, with automatic protection of system disks.
-- Persistent drive records with stable IDs across reboots when trustworthy hardware identities are available.
-- Read-only partition mounting under `/mnt/drivebench/`, using uniquely numbered mount directories.
-- Track mounts using saved history and live kernel mount information.
-- Read-only filesystem signature inspection using `blkid` and `wipefs --no-act`.
-- SMART and SCSI health reporting, including power-on counters, error information, and device-supported diagnostic data.
-- GitHub branch discovery, version comparison, and staged ZIP downloads without automatic source replacement.
-- Detect possible duplicate SCSI target-ID enumeration.
-- Identify drives using hardware-reported serials, operator-supplied serials, and asset IDs, with appropriate provenance.
-- Supervised whole-disk overwriting, optional readback verification, partitioning, formatting, and on-disk text reports.
-- Read-only raw disk evidence scanning, including recognizable file signatures and filesystem structures.
-- Full-surface uniform-byte verification for patterns such as `0x00`, `0xFF`, `0x6C`, or any other byte.
-- Persistent records of completed, failed, and interrupted analysis operations.
-- Optional TestDisk, PhotoRec, and GNU ddrescue integration for investigation and recovery.
-- **Letter-size PDF test reports** generated from saved drive identification and completed diagnostics.
-- PDF regeneration from saved history, including after the drive has been disconnected.
-- Optional CUPS printing of letter-size reports through configured Ubuntu printers.
-- **Antistatic bag-label PDFs** in 2.25 × 4-inch and 4 × 6-inch formats.
-- Bag labels containing drive identification, serial number, capacity, interface, and available completed test summaries.
-- Label regeneration from saved drive history, without requiring the physical drive to remain connected.
-- DriveBench version and GitHub project URL included in printed report and label layouts.
+- Discover disks, partitions, interfaces, serial numbers, SCSI addresses, and storage controllers.
+- Identify drives using hardware serial numbers, operator-entered serial numbers, and asset IDs.
+- Maintain persistent drive history across reboots.
+- Protect system disks and support explicit drive, slot, and controller exclusions.
+- Mount supported partitions read-only.
+- Inspect filesystem and partition signatures.
+- Collect SMART and SCSI health information.
+- Perform quick or full read-only raw-media evidence scans.
+- Detect recognizable file signatures and potential filesystem structures.
+- Verify uniform-byte patterns across examined data.
+- Record completed, interrupted, and failed analysis operations.
+- Investigate lost partitions with TestDisk.
+- Recover files using PhotoRec to a separate destination disk.
+- Create disk images using GNU ddrescue.
+- Perform supervised destructive overwrites and formatting.
+- Generate detailed, printable PDF drive reports.
+- Regenerate reports from saved history after disconnecting a drive.
+- Submit letter-size PDF reports to configured Ubuntu CUPS printers.
+- Generate PDF labels for antistatic drive bags.
+- Support **3 × 1, 2.25 × 4, and 4 × 6-inch labels**.
+- Include drive identification and available verified test results on labels.
+- Check GitHub branches and download staged updates without automatically replacing installed code.
 
-**Not included yet:** direct Zebra/ZPL printing, a dedicated write/read surface stress test, device-native SSD secure erase, and Macintosh HFS/Apple Partition Map creation. SMART inspection alone is not a surface test.
+Not yet implemented: direct Zebra/ZPL label printing, marketplace report images, per-drive output folders, device-native SSD secure erase, dedicated write/read surface stress testing, and Macintosh HFS/Apple Partition Map creation.
 
-## Install on Ubuntu Server
+## Installation
 
-Log in as your normal, non-root user.
-
-Install required system components:
+### Required Ubuntu packages
 
 ```bash
 sudo apt update
 sudo apt install -y python3 util-linux udev pciutils sudo coreutils
 ```
 
-Additional diagnostics, preparation, and GitHub utilities:
+Additional diagnostic and preparation utilities:
 
 ```bash
 sudo apt install -y smartmontools sg3-utils wget git parted dosfstools exfatprogs diffutils
 ```
 
-Optional recovery and imaging tools:
+Optional recovery utilities:
 
 ```bash
 sudo apt install -y testdisk gddrescue
 ```
 
-Optional PDF generation and printing support:
+Optional PDF generation and printing:
 
 ```bash
 sudo apt install -y python3-reportlab cups-client
 ```
 
-Both the letter-size reports and bag-label PDFs require **ReportLab**.
+Both full-page reports and bag-label PDFs use ReportLab.
 
-Verify the Python dependency:
+Verify that ReportLab is available:
 
 ```bash
 python3 -c "import reportlab; print(reportlab.Version)"
 ```
 
-If using a Python virtual environment, install ReportLab into that environment rather than assuming Ubuntu's system package is available.
+If DriveBench runs inside a Python virtual environment, ReportLab must also be installed in that environment.
 
-For direct printing through Ubuntu, a working CUPS server and configured printer queue are also required. PDF generation does not require CUPS.
+CUPS is required only for submitting print jobs through Ubuntu. PDF generation does not require CUPS or a connected printer.
 
-### Download and launch
+### Download DriveBench
 
-Download the latest source archive from:
+Repository:
 
 https://github.com/ericburnsonline/DriveBench
 
-Choose **Code → Download ZIP**, extract it into a new directory, and enter that directory.
+Select **Code → Download ZIP**, extract the archive, and open a terminal in the extracted directory.
 
-Run:
-
-```bash
-bash run-tests.sh
-bash start-drivebench.sh
-```
-
-Alternatively, clone the repository:
+Alternatively:
 
 ```bash
 git clone https://github.com/ericburnsonline/DriveBench.git
 cd DriveBench
-bash run-tests.sh
+```
+
+For testing an unmerged feature, download or check out the appropriate branch instead of `main`.
+
+### Start DriveBench
+
+```bash
 bash start-drivebench.sh
 ```
 
-To test an unmerged feature branch, select that branch before downloading its ZIP or switch branches using Git.
+Run the automated tests:
 
-**Do not launch DriveBench as root.**
+```bash
+bash run-tests.sh
+```
 
-Run it as your normal user. Individual device operations request elevated privileges only when needed.
+DriveBench requests elevated privileges only for operations that require them.
+
+Do not launch the complete application using `sudo`.
 
 ## Main menu
 
@@ -121,260 +136,276 @@ DR I V E B E N C H  v0.4.5  |  Ubuntu drive workstation
  0. Exit
 ```
 
-After choosing a drive, the additional options include:
+After selecting a drive:
 
 ```text
+ 1. View full drive details
+ 2. View partitions
+ 3. Mount a partition read-only
+ 4. Add disk exclusion
+ 5. View history / add note / manual wipe report
+ 6. Inspect filesystem / partition signatures
+ 7. Show SMART / SCSI drive-health details
+ 8. Show detailed SCSI log pages
  9. Wipe / format / write drive report (DESTRUCTIVE)
 10. Identify drive / manually enter serial and asset ID
 11. Raw disk analysis / evidence & recovery
-12. Generate / print PDF drive report (non-destructive)
-13. Generate antistatic bag label PDF (non-destructive)
+12. Generate / print PDF drive report
+13. Generate antistatic bag label PDF
+ 0. Back
 ```
 
-## Printable letter-size PDF drive reports (v0.4.4)
+## Printable PDF drive reports (v0.4.4)
 
-DriveBench can generate a seller-facing PDF containing recorded drive identification and completed diagnostic results.
+DriveBench generates seller-facing, US Letter PDF reports containing saved drive identification and completed diagnostic results.
 
-The PDF is generated on the Ubuntu workstation, not written onto the drive under test.
+The PDFs are saved on the Ubuntu workstation. They are not written to the disk being tested.
 
-**You do not need to wipe, partition, or format a drive to generate a PDF report.**
+**A drive does not need to be wiped, partitioned, or formatted to generate a PDF report.**
 
-### Generate a full-page PDF
+### Generate a report
 
-1. Launch DriveBench normally.
+1. Launch DriveBench.
 2. Choose **2. Select drive**.
-3. Select the physical drive and verify its model and serial number.
-4. Choose **12. Generate / print PDF drive report**.
-5. Choose **1. Generate / regenerate PDF from saved drive results**.
-6. Optionally collect current SMART/SCSI information.
-7. DriveBench saves the PDF and displays its location.
+3. Select the correct physical drive.
+4. Verify the model and serial number.
+5. Choose **12. Generate / print PDF drive report**.
+6. Select **1. Generate / regenerate PDF**.
+7. Optionally include current SMART/SCSI information.
+8. DriveBench displays the saved PDF location.
 
-If a report already exists, type `REGENERATE` to replace it.
-
-Otherwise, the existing report is preserved.
+Existing reports require the explicit `REGENERATE` confirmation before replacement.
 
 ### Report location
 
-Full-page reports are saved under:
+Reports are saved under:
 
 ```text
 ~/DriveBench-Reports/
 ```
 
-A sample filename:
+Example:
 
 ```text
 SEAGATE-spi-ST318406LW-18GB-SN-3FE1WTKP00007310BJH2.pdf
 ```
 
-The filename includes:
-
-- Manufacturer
-- Interface or transport
-- Model
-- Decimal capacity
-- Hardware-reported serial number, or an explicitly identified alternative
-
-Filenames are sanitized to avoid unsafe filesystem characters.
-
-A regenerated report normally uses the same filename when its identifying information is unchanged.
+Filenames are based on the available manufacturer, interface, model, capacity, and serial or alternative identifier.
 
 ### Report contents
 
-Reports can include:
+Depending on available records, reports include:
 
 - Manufacturer and model
 - Interface and capacity
-- Hardware serial number
-- Operator-supplied serial number, separately identified
+- Hardware-reported serial number
+- Operator-supplied serial or asset ID, clearly distinguished
 - DriveBench inventory ID
-- Latest completed full raw-disk scan
-- Full logical-surface verification
-- Uniform-byte analysis
-- Explicitly collected SMART information, when supported
+- Completed raw-media scans
+- Full logical-surface read results
+- Verified uniform-byte patterns
+- Optional current SMART/SCSI information
+- DriveBench version and GitHub URL
 
-Missing test results are not represented as successful tests.
+Missing information is not represented as a successful test.
 
-The report does not include recovered filenames, personal file contents, or complete internal recovery history.
+Recovered filenames, personal file contents, and complete internal recovery history are not included in seller-facing PDFs.
 
-The footer includes the DriveBench version and project URL:
+### Regenerate from history
 
-https://github.com/ericburnsonline/DriveBench
-
-Reports are designed to accept additional diagnostic sections as DriveBench evolves.
-
-### Regenerate after disconnecting a drive
+A drive does not need to remain connected.
 
 Choose:
 
 **Main menu → 8. Drive history → select record → 4. Generate / regenerate PDF**
 
-This uses previously saved information and does not require the original drive to remain connected.
+The report uses saved information.
 
-Current SMART data collected only for an earlier PDF is not necessarily retained in persistent history. Regenerating from history cannot reconstruct readings that were never saved.
+Live SMART readings that were never persisted cannot be reconstructed after disconnecting a drive.
 
-### Printing a full-page report from Ubuntu
-
-The report-printing option uses the Ubuntu CUPS printing system.
-
-After configuring a printer, choose:
-
-**Select drive → 12 → 2. Print saved PDF**
-
-Select the desired CUPS printer and type `PRINT`.
-
-The initial implementation requests:
-
-- US Letter paper
-- Single-sided printing
-- One copy
-
-A print job accepted by CUPS is not proof that it physically printed successfully.
-
-**Hardware printing status:** A DriveBench-generated Seagate ST318406LW report was successfully printed from Windows after copying the PDF from Ubuntu. Direct Ubuntu printing experienced CUPS/USB printer problems and remains a separate troubleshooting task. The PDF itself was confirmed to be a valid one-page, letter-size document.
-
-## Antistatic bag-label PDFs (v0.4.5)
-
-DriveBench can generate small identification labels for placement on the **outside of antistatic drive bags**.
-
-These labels complement the detailed full-page report.
-
-They are intended for inventory identification and concise reporting, not as replacements for the manufacturer's original drive label.
-
-### Supported label sizes
-
-| Label size | Intended use |
-| --- | --- |
-| **2.25 × 4 inches** | Preferred compact drive-bag label |
-| **4 × 6 inches** | Larger label with additional available space |
-
-The default is **2.25 × 4 inches**.
-
-Dimensions are specified as width across the label and length in the feed direction.
-
-The generated PDF uses the exact selected page dimensions.
-
-### Generate a label with the drive connected
-
-1. Start DriveBench.
-2. Choose **2. Select drive**.
-3. Select and verify the physical drive.
-4. Choose **13. Generate antistatic bag label PDF**.
-5. Select **2.25x4** or **4x6**.
-6. DriveBench displays the destination filename.
-7. The label PDF is generated without writing to the drive or sending a printer job.
-
-If the label already exists, type `REGENERATE` when prompted to replace it.
-
-### Generate a label from saved history
-
-The original drive does not have to remain connected.
+### Print the full-page report
 
 Choose:
 
-**Main menu → 8. Drive history → select drive record → 5. Generate / regenerate an antistatic bag label PDF**
+**Select drive → 12 → 2. Print saved PDF**
 
-This uses saved identification and completed scan records.
+DriveBench uses the Ubuntu CUPS system.
 
-For drives without a trustworthy hardware identity, select the appropriate saved record carefully and confirm the physical drive's identification before attaching the label.
+The initial print request specifies:
 
-### Label contents
+- US Letter
+- Single-sided
+- One copy
 
-Depending on available data, labels contain:
+A CUPS job being accepted does not guarantee physical printing.
 
-- DriveBench heading
+During development, a DriveBench-generated Seagate report was successfully printed from Windows after transferring the PDF from Ubuntu. Direct Ubuntu printing experienced CUPS/USB issues and remains a separate troubleshooting task.
+
+## Antistatic drive-bag labels (v0.4.5)
+
+DriveBench can generate smaller PDF identification labels for placement on the outside of antistatic bags.
+
+These complement the detailed paper report and help identify drives after packaging.
+
+### Supported label sizes
+
+| Size | Description |
+| --- | --- |
+| **3 × 1 inches** | Compact horizontal label |
+| **2.25 × 4 inches** | Detailed bag identification label |
+| **4 × 6 inches** | Larger identification label |
+
+The programmatic default remains **2.25 × 4 inches** for compatibility, while the interactive menu lists the new **3 × 1-inch** option first.
+
+All dimensions refer to the actual PDF page size.
+
+### Compact 3 × 1-inch labels
+
+The 3 × 1-inch format uses a dedicated horizontal layout.
+
+It prioritizes:
+
+- DriveBench inventory ID
 - Manufacturer
 - Model
-- Decimal capacity
-- Interface, including a human-readable SCSI designation for `SPI`
-- Hardware-reported serial number, if available
-- Operator-supplied serial number or asset ID, labeled appropriately
-- DriveBench inventory ID
-- Short full-surface scan summary
-- Verified uniform-byte pattern, when supported by a completed full scan
-- Reference to the enclosed detailed test report
-- DriveBench GitHub URL and version
-- Statement that the label is not a sanitization certificate
+- Capacity
+- Interface
+- Full available serial number
+- Completed full-surface read status
+- Verified uniform-byte information, when available
+- Reference to the detailed report
+- DriveBench GitHub URL
 
-The entire serial number is retained rather than silently truncated.
+The compact layout uses abbreviated descriptions to conserve space.
 
-If a required text field cannot fit at the minimum supported font size, label creation returns an error instead of generating an incorrectly shortened identifier.
+A hardware-reported serial is identified with `HW SN`.
 
-### Scan-result safeguards
+An operator-entered identifier is labeled separately and is never presented as firmware-verified.
 
-The label generator uses the latest **completed full scan**.
+If a required identifier cannot fit, label generation raises an error instead of silently truncating the serial number.
 
-An incomplete or failed scan cannot replace a previous completed result.
+### Generate a label for a connected drive
 
-A full logical-surface read is described as complete only when the recorded scan confirms full coverage of the reported disk capacity.
+1. Launch DriveBench.
+2. Choose **2. Select drive**.
+3. Select and verify the physical drive.
+4. Choose **13. Generate antistatic bag label PDF**.
+5. Select a label size.
 
-The label reports a uniform byte as verified only when the saved analysis contains `VERIFIED_FULL_SURFACE` and the full-read requirements are satisfied.
+The size menu offers:
 
-Otherwise, the label does not claim that the entire disk has been verified.
+```text
+ANTISTATIC BAG LABEL SIZE
 
-Even a verified uniform pattern does not establish whether a drive is factory-new, previously used, securely erased, or sanitized in inaccessible physical sectors.
+ 1. 3 x 1 inches (compact)
+ 2. 2.25 x 4 inches
+ 3. 4 x 6 inches
+ 0. Back
+```
+
+DriveBench saves the PDF without writing anything to the source disk or submitting a printer job.
+
+If the file already exists, type `REGENERATE` to replace it.
+
+### Generate a label from saved history
+
+Choose:
+
+**Main menu → 8. Drive history → select record → 5. Generate / regenerate an antistatic bag label PDF**
+
+This allows labels to be generated after disconnecting the original drive.
+
+When a record uses manually supplied identification, verify that it corresponds to the intended physical disk before applying the label.
 
 ### Label file location
 
-Bag labels are saved under:
+Version 0.4.5 saves labels under:
 
 ```text
 ~/DriveBench-Reports/labels/
 ```
 
-Example:
+Example filenames:
 
 ```text
+SEAGATE-spi-ST318406LW-18GB-SN-3FE1WTKP00007310BJH2-bag-label-3x1.pdf
+
 SEAGATE-spi-ST318406LW-18GB-SN-3FE1WTKP00007310BJH2-bag-label-2p25x4.pdf
+
+SEAGATE-spi-ST318406LW-18GB-SN-3FE1WTKP00007310BJH2-bag-label-4x6.pdf
 ```
 
-The larger alternative uses a different suffix:
+The dimensions are included in filenames so different label formats do not overwrite one another.
+
+Existing labels require explicit confirmation before regeneration.
+
+**Per-drive folders and common sortable filename prefixes are planned for v0.4.6, not v0.4.5.**
+
+### Verified scan results
+
+Labels use saved completed full-scan events.
+
+A full logical-surface read is described as complete only when the stored scan indicates full coverage of the reported disk capacity.
+
+A uniform-byte pattern is described as verified only when the underlying result supports `VERIFIED_FULL_SURFACE`.
+
+Incomplete, failed, or sampled scans must not be represented as completed full-surface verification.
+
+Examples of possible summaries include:
 
 ```text
--bag-label-4x6.pdf
+FULL READ COMPLETE
+Uniform 0x6C: verified
+
+SCAN NOT VERIFIED
+Pattern not verified
 ```
 
-The size is included in the filename so different label formats do not overwrite one another.
+A completed full-surface read does not prove that a drive is factory-new or securely sanitized.
 
-Regeneration requires explicit confirmation before replacing an existing PDF.
+Labels are inventory and diagnostic summaries, not sanitization certificates.
 
-Generated labels are stored locally on the Ubuntu workstation with restricted file permissions.
+### Printing PDF labels
 
-### Printing the label
+Version 0.4.5 **does not automatically print labels**.
 
-**Version 0.4.5 generates PDF labels but does not automatically send them to the Zebra printer.**
+Generate the PDF and print it using a suitable application and configured printer driver.
 
-Initially, the PDF can be copied to a Windows computer and printed using the Zebra driver already configured there.
+For Zebra printers:
 
-When printing:
+1. Use a printer loaded with the correct label stock.
+2. Select the matching label dimensions.
+3. Print at **100% / Actual size**.
+4. Disable scaling or fit-to-page.
+5. Confirm the label prints without clipping.
 
-1. Select the Zebra printer with the matching label stock.
-2. Select the same paper dimensions as the generated PDF.
-3. Print at **Actual size / 100%**.
-4. Disable **Fit to page**, automatic scaling, and unintended margins.
-5. Check the printed label's orientation and alignment before printing additional copies.
+For 3 × 1-inch stock, configure the printer or Windows driver for a 3-inch-wide, 1-inch-long label.
 
-Do not use DriveBench's existing letter-size CUPS print option for the small label. That function currently requests Letter media.
+A thermal-transfer label requires a compatible ribbon. Direct-thermal labels do not.
 
-Future versions may support direct Zebra printing through appropriately configured CUPS media settings or native ZPL commands.
+The Zebra GK420t supports both methods, but the printer configuration and media must agree.
+
+A blank printer configuration label indicates a printer/media problem rather than a DriveBench PDF problem.
+
+Do not use DriveBench's letter-size CUPS printing option for small bag labels. It currently requests US Letter media.
 
 ### Packaging recommendations
 
 Place the tested drive in a suitable antistatic bag.
 
-Apply the identification label to the **outside of the bag**, leaving the manufacturer's drive label unobstructed.
+Attach the identification label to the outside of the bag.
 
-Seal the bag using an appropriate ESD warning sticker or equivalent closure.
+Keep the manufacturer's original drive label available for inspection.
 
-Include the full-page test report separately.
+Include the detailed full-page PDF report as a printed document when appropriate.
 
-For a drive being sold without a new filesystem, there is no need to format it merely to place a DriveBench report on the media.
+Avoid formatting an otherwise unformatted drive simply to add documentation.
 
-## Raw disk evidence scanning and recovery (v0.4.2)
+## Raw disk analysis and recovery (v0.4.2)
 
-Choose:
+Select:
 
-**2. Select drive → select disk → 11. Raw disk analysis / evidence & recovery**
+**2. Select drive → 11. Raw disk analysis / evidence & recovery**
 
 ```text
 RAW DISK ANALYSIS / RECOVERY
@@ -388,252 +419,261 @@ RAW DISK ANALYSIS / RECOVERY
  0. Back
 ```
 
-The quick scan reads selected disk regions and searches for recognizable signatures.
+### Quick evidence scan
 
-The full scan reads the accessible logical disk surface, tracking signature evidence and scan completeness.
+Reads selected areas of the disk.
 
-Recognized file headers may include JPEG, PNG, PDF, ZIP, GIF, ELF, SQLite, gzip, and RAR.
+Searches for recognizable filesystem structures and file signatures.
 
-File signatures are only candidates. They do not establish that a complete file exists or can be recovered.
+Results apply only to sampled regions.
 
-Finding no signatures does not prove that a drive was never used.
+### Full evidence scan
+
+Reads the complete host-accessible logical surface, where possible.
+
+Records:
+
+- Number of bytes examined
+- Scan completion
+- Recognizable signatures
+- Filesystem and partition hints
+- Entropy observations
+- Zero-byte fraction
+- Uniform-byte analysis
+
+Potential file signatures include JPEG, PNG, PDF, ZIP, GIF, ELF, SQLite, gzip, and RAR.
+
+Signature matches are only candidates. They do not prove that complete files can be recovered.
+
+No detected signature does not prove that the drive was never used.
 
 ### Uniform-byte verification (v0.4.3)
 
-Uniform-byte analysis is integrated into quick and full scans.
+Uniform-byte analysis is integrated into the quick and full scans.
 
-It detects whether all examined bytes have a single value, such as:
+It supports any byte value, including:
 
 - `0x00`
 - `0xFF`
 - `0x6C`
-- Any other byte value
 
-The scanner compares every byte returned by its read operation.
+Possible results:
 
 | Result | Meaning |
 | --- | --- |
-| `VERIFIED_FULL_SURFACE` | Completed full logical-surface scan with one uniform byte |
-| `SAMPLED_OR_PARTIAL_ONLY` | Examined regions match, but full coverage is not established |
-| `NOT_UNIFORM` | Different byte values were detected |
-| `NO_DATA` | No bytes were examined |
+| `VERIFIED_FULL_SURFACE` | Completed full logical-surface read with a uniform byte pattern |
+| `SAMPLED_OR_PARTIAL_ONLY` | Examined data matches, but entire disk coverage is not established |
+| `NOT_UNIFORM` | Multiple byte values detected |
+| `NO_DATA` | No bytes examined |
 
-The distinction between full-surface verification and sampled observations is important.
+In October 2026, DriveBench successfully read all 18,351,959,040 host-addressable bytes of a Seagate ST318406LW and verified a uniform `0x6C` byte pattern.
 
-**Real hardware example:** In October 2026, DriveBench completed a read-only scan of 18,351,959,040 bytes on a Seagate ST318406LW and verified a uniform `0x6C` pattern across the complete host-readable logical surface.
+That result does not establish the origin of the pattern or certify sanitization.
 
-This does not establish the origin of the pattern or prove the drive is factory-new.
+### TestDisk
 
-It also does not constitute certified secure sanitization.
+TestDisk examines partition structures and can search for lost partitions.
 
-### Recovery and imaging
+A successful process exit code is not evidence that partitions were found or that a search completed.
 
-The TestDisk integration investigates partition structures without intentionally modifying partition tables.
+Current DriveBench TestDisk output handling has limitations. Detailed result interpretation and clearer completion reporting are planned improvements.
 
-PhotoRec can recover file contents to another physical disk.
+Do not select TestDisk's partition-table **Write** function when investigating a disk that should remain unchanged.
 
-GNU ddrescue can create a disk image and resumable mapfile on another disk.
+### PhotoRec
 
-Recovery destinations must be verified as separate from the source disk.
+PhotoRec can attempt file recovery without relying on a working partition table.
 
-DriveBench does not store recovered personal file contents inside its persistent scan records.
+Recovered files must be written to a separate physical disk.
 
-These external recovery workflows require further real-hardware validation before routine use.
+DriveBench should not be used to recover files back onto the source disk.
+
+Recovery may expose previously stored information. Handle recovered material only when authorized.
+
+### GNU ddrescue
+
+DriveBench can invoke ddrescue to create an image on a different physical disk.
+
+The destination must have sufficient available space.
+
+The saved image and recovery mapfile should be retained together when performing resumable imaging.
+
+These recovery workflows require additional real-hardware validation.
 
 ### Persistent analysis history
 
-Raw analysis events are saved in:
+DriveBench saves analysis results under its persistent state location:
 
 ```text
 ~/.local/state/drivebench/state.json
 ```
 
-Records can include:
+History can include:
 
-- Drive identity
-- Analysis type
+- Drive identification
+- Operation type
 - Start and completion times
-- Scan coverage and progress
-- Recognizable signatures
+- Status
+- Scan coverage
+- Signature observations
 - Uniform-byte verification results
-- Completed, interrupted, and failed statuses
 
-Incomplete scans are not marked as successfully completed.
+Interrupted and failed operations are not marked as successfully completed.
 
-For drives with trustworthy hardware identity, history can follow the drive across restarts.
-
-Unidentified drives require explicit operator confirmation before reconnecting saved manual records.
-
-## Drive identification and serial persistence (v0.4.1)
+## Drive identification (v0.4.1)
 
 Choose:
 
-**2. Select drive → select disk → 10. Identify drive**
+**Select drive → 10. Identify drive**
 
-DriveBench can obtain available drive-native serial information using SMART and SCSI inquiry methods.
+DriveBench can attempt native serial detection using SMART and SCSI inquiry utilities.
 
-USB bridge serial numbers are not automatically trusted as the drive's actual serial number.
+Hardware-reported serial numbers are distinguished from operator-supplied values.
 
-The menu allows:
+An operator may enter:
 
-1. Entering or editing an operator-supplied serial number and asset ID.
-2. Retrying native serial detection with sudo.
-3. Reattaching a saved manual record after restart when automatic identity is unavailable.
+- Manual serial number
+- Asset or inventory ID
 
-Operator-supplied values are saved separately from hardware-reported identifiers.
+Manually supplied identifiers persist in history but do not constitute proof of hardware identity.
 
-A matching disk model, size, USB slot, or Linux device path is not proof that two devices are physically identical.
+USB bridge serial numbers are not automatically assumed to belong to the actual disk.
 
-Manual-only records therefore require explicit confirmation before being associated with a drive after reboot.
+Drives without trustworthy hardware identification require manual confirmation when reconnecting saved records after a restart.
 
-This distinction is especially important before destructive operations.
+## Wiping and formatting (v0.4.0)
 
-## Wiping, formatting, and on-drive reports (v0.4)
+**WARNING: These operations destroy existing data.**
 
-**WARNING:** Wiping and formatting destroy existing data.
+Complete any necessary inspection, imaging, or authorized recovery before wiping or formatting.
 
-Always complete any necessary copying, imaging, or recovery first.
+Choose:
 
-The destructive workflow has been tested using mocked operations but still requires validation on a sacrificial physical HDD.
-
-From **2. Select drive**, choose:
-
-**9. Wipe / format / write drive report**
+**Select drive → 9. Wipe / format / write drive report**
 
 ### Whole-disk overwrite
 
-DriveBench supports supervised overwrites using zero or random data, with 1–10 passes.
+DriveBench supports supervised zero or random overwrites with 1–10 passes.
 
 Optional verification includes:
 
-- Full zero readback verification after zero overwrite.
-- Readability checking after random overwrite.
+- Full zero readback
+- Readability testing after random overwrites
 
-Random readback does not independently prove an exact byte-for-byte match with the generated random stream.
+Random-data readability checking does not establish exact byte-for-byte verification of the random stream.
 
-Failed or interrupted operations are not recorded as successful wipes.
+Incomplete operations must not be reported as successful wipes.
 
 ### Partitioning and formatting
 
 Supported options include:
 
-- MBR/FAT32 for older-system compatibility.
-- GPT/exFAT for newer Windows, macOS, and Linux systems.
-
-The user must explicitly select and confirm destructive operations.
+- FAT32 with MBR
+- exFAT with GPT
 
 Formatting is separate from wiping.
 
-### On-drive text report
+Legacy compatibility varies by operating system and storage controller.
 
-DriveBench can write `DRIVEBENCH-REPORT.txt` to an appropriately formatted partition created through its preparation workflow.
+### On-drive report
 
-Unlike the printable PDFs, this operation writes data directly onto the target disk.
+DriveBench can write `DRIVEBENCH-REPORT.txt` to an appropriate formatted partition.
 
-It is unnecessary when the goal is to sell the drive unformatted with a separate printed report.
+This differs from printable PDFs, which are stored on the Ubuntu workstation and do not modify the tested disk.
 
 ### Destructive-operation safeguards
 
-DriveBench performs identity and preflight checks before destructive actions, including:
+DriveBench performs checks involving:
 
 - System-disk protection
-- Current device path and available disk sequence information
-- Model, capacity, and identity checks
-- Existing mounts and storage dependencies
-- Controller and drive exclusions
-- Device read-only status
-- Detection of unsupported solid-state targets
+- Device identity
+- Device size and model
+- Disk sequence information when available
+- Mounted filesystems
+- Storage dependencies
+- Configured exclusions
+- Read-only device status
+- Unsupported solid-state targets
 
-Never hot-swap SCSI devices during operation.
+Do not hot-swap SCSI devices.
 
-Software overwrites do not necessarily address hidden or reallocated physical sectors.
+**Destructive wipe and format workflows still require validation on a sacrificial physical HDD before routine use.**
 
-A completed overwrite is not an independent sanitization certificate.
+Software overwriting does not guarantee sanitization of inaccessible or reallocated physical sectors.
 
-## Mount partitions read-only
+## Read-only partition mounting
 
-1. Launch DriveBench.
-2. Choose **2. Select drive**.
-3. Select the desired physical drive.
-4. Choose **3. Mount a partition read-only**.
-5. Select the partition and confirm.
-6. Use the displayed mount path from another terminal.
-7. Unmount the partition using the main menu when finished.
+Choose:
 
-Example mount path:
+**Select drive → 3. Mount a partition read-only**
+
+DriveBench creates managed mount directories under:
+
+```text
+/mnt/drivebench/
+```
+
+Example:
 
 ```text
 /mnt/drivebench/DB-000001-sdc1-001/
 ```
 
-DriveBench tracks managed mounts and checks live kernel mount information.
+DriveBench tracks managed mount history and checks active kernel mount information.
 
-Read-only mounting does not provide forensic-grade hardware write protection.
+Read-only software mounting is not a substitute for hardware write blocking when forensic integrity is required.
 
-Ext3/ext4 and XFS mounts use additional options intended to avoid journal replay where applicable.
+Unsupported or damaged filesystems may need specialist tools.
 
-Damaged or unusual filesystems may require specialist tools.
-
-Older Macintosh formats and uncommon vintage SCSI layouts may not mount using standard Linux filesystem drivers.
-
-If data is irreplaceable, image the disk before experimenting with mounts.
+Older Macintosh formats and unusual vintage SCSI layouts may not be supported by standard Linux filesystem drivers.
 
 ## Filesystem signatures
 
-Choose **6. Inspect filesystem / partition signatures** from the selected drive's menu.
-
-DriveBench uses read-only probes such as:
+DriveBench uses read-only commands such as:
 
 ```bash
 blkid -p
 wipefs --no-act
 ```
 
-A missing partition-table signature does not prove a disk is blank.
+A missing partition table or unknown filesystem does not prove the disk is blank.
 
-For example, `PTTYPE=null` means a recognized partition-table type was not returned by that probe. It does not rule out whole-device filesystems, unsupported layouts, or previously stored data.
+Unknown filesystem layouts can contain data that the installed Linux tools do not recognize.
 
-## SMART and SCSI health reporting
+## SMART and SCSI health information
 
 Choose:
 
 - **7. Show SMART / SCSI drive-health details**
 - **8. Show detailed SCSI log pages**
 
-Supported information can include:
+Depending on device support, results may include:
 
-- Drive model and serial
-- Device-reported SMART status
-- Power-on hours
+- Model and serial
+- Device-reported health status
+- Power-on counters
 - Start/stop counts
-- Read/write error counters
 - Corrected and uncorrected errors
+- Read/write error information
 - SCSI grown defect counts
-- Additional vendor-supported SCSI log information
 
-Not all devices provide the same attributes.
+Missing information is not automatically interpreted as zero.
 
-A missing value must not be interpreted as zero.
+On some older SCSI drives, GLTSD settings can prevent historical counters from being preserved across power cycles.
 
-For some older SCSI drives, GLTSD (Global Logging Target Save Disabled) can make historical counters incomplete across power cycles.
+Very low reported power-on hours do not prove factory-new condition.
 
-Low reported power-on hours do not establish factory-new condition.
-
-A passing SMART result does not guarantee that every sector is healthy.
+SMART health checks do not replace surface testing.
 
 ## GitHub update checking
 
-Choose **10. Check GitHub branches / download update ZIP** from the main menu.
+Choose:
 
-DriveBench can:
+**Main menu → 10. Check GitHub for branch updates / download ZIP**
 
-- List available repository branches.
-- Display commit identifiers.
-- Download a selected commit archive.
-- Compare downloaded files with installed files.
-- Stage an update without automatically replacing running code.
+DriveBench can discover available branches, display commit identifiers, download an archive, and compare files.
 
-This feature does not install updates automatically.
+It does not install downloaded updates automatically.
 
 For a Git checkout:
 
@@ -644,46 +684,42 @@ git switch main
 git pull --ff-only origin main
 ```
 
-To test a feature branch, download or check out that branch separately.
+To test an unmerged feature branch, check out that branch separately.
 
-Saved configuration and drive history are outside the source directory and should not be overwritten by an application update.
+Persistent drive history and configuration are stored outside the source directory.
 
-## SCSI ID conflict troubleshooting
+## SCSI ID troubleshooting
 
-During testing, a Seagate ST318406LW appeared repeatedly at multiple SCSI target IDs because of a hardware configuration conflict.
+During hardware development, a Seagate ST318406LW appeared at multiple SCSI target IDs because of a hardware configuration conflict.
 
-After powering down and correcting the drive's SCSI ID jumper, enumeration returned to normal.
+Correcting the SCSI ID jumper after powering down resolved the issue.
 
-Useful inspection command:
+Useful command:
 
 ```bash
 lsblk -d -o NAME,HCTL,SIZE,MODEL
 ```
 
-When troubleshooting:
+When troubleshooting SCSI:
 
-- Power off before changing SCSI cables, jumpers, or devices.
-- Ensure devices on the same bus have unique SCSI IDs.
-- Check controller ID configuration.
-- Verify termination and cabling.
-- Do not assume duplicate model listings always indicate a conflict.
+- Shut down before changing cables, jumpers, or drives.
+- Ensure devices have unique bus IDs.
+- Verify controller settings.
+- Check termination and cabling.
+- Do not assume duplicate models alone prove a conflict.
 
-DriveBench can warn about unusually repeated model/capacity combinations across SCSI IDs.
+## Configuration and persistent state
 
-## Configuration, history, and permissions
-
-Default persistent files:
+Default locations:
 
 ```text
 ~/.config/drivebench/config.json
 ~/.local/state/drivebench/state.json
 ```
 
-These survive ordinary application upgrades and reboots.
+These files survive ordinary application upgrades and reboots.
 
-DriveBench uses the XDG configuration and state locations when configured.
-
-Typical statuses include:
+DriveBench can record statuses such as:
 
 - `DISCOVERED`
 - `UNVERIFIED`
@@ -694,17 +730,11 @@ Typical statuses include:
 - `PREPARED`
 - `MANUAL_WIPE_REPORTED`
 
-Externally reported wipes are not represented as verified DriveBench operations.
-
-The normal application user must not be root.
-
-Filesystem mounting and other privileged drive operations elevate only when necessary.
-
-PDF generation and label generation run as the ordinary user and do not require writing to the attached drive.
+A manually reported external wipe is not represented as a verified DriveBench operation.
 
 ## Testing
 
-From the repository root:
+Run all automated tests:
 
 ```bash
 bash run-tests.sh
@@ -716,53 +746,76 @@ Or:
 python3 -m unittest discover -s tests -v
 ```
 
-Automated tests are designed to use mocked hardware operations rather than performing destructive actions on physical drives.
+Run just the bag-label tests:
 
-Previous releases include coverage for:
+```bash
+python3 -m unittest discover -s tests -p 'test_labels.py' -v
+```
 
-- Drive discovery and stable identification
-- Persistent history
-- SCSI duplicate-enumeration warnings
-- Mount protection
-- Destructive-operation preflight safeguards
-- GitHub update staging
-- SMART information handling
-- Raw disk scanning and uniform-byte verification
-- PDF report generation and regeneration
-- CUPS print-job submission
+The v0.4.5 label tests are intended to cover:
 
-Version 0.4.5 adds label-related tests covering:
-
-- Both supported PDF page sizes
-- Hardware and operator-supplied identifiers
-- Completed versus incomplete scan results
+- All three supported PDF page sizes
+- Full serial number preservation
+- Hardware versus operator-supplied identifiers
+- Completed and incomplete scan summaries
 - Uniform-byte verification safeguards
-- Deterministic label filenames
-- Existing-file regeneration protection
-- History-based label generation
+- Deterministic filenames
+- Regeneration confirmation
+- Generation from saved history
 - CLI menu integration
-- Avoidance of automatic printer submission
+- No automatic printer submission
 
-The expanded v0.4.5 suite must pass on Ubuntu before merging this feature branch.
+Tests use simulated drive records rather than destructive operations on physical hardware.
 
-Generated label PDFs must also be inspected and physically printed at their intended dimensions before the layout is considered hardware-validated.
+The expanded test suite must pass before v0.4.5 is merged.
 
-**Destructive wipe and format workflows still require testing on a sacrificial physical HDD.**
+The 3 × 1-inch layout also requires a successful physical print before its printer compatibility can be considered validated.
 
-## Future development
+## Planned development
 
-Planned improvements include:
+### v0.4.6: Organized reports and marketplace images
 
-- Direct Zebra label printing using native printer commands or correctly configured CUPS media settings.
-- Smart File Discovery & Recovery for mounted Windows, macOS, and Linux filesystems.
-- Configurable file-discovery profiles for documents, photographs, videos, backups, and other file types.
-- Selective file copying to a separate disk with verification and persistent recovery history.
-- Dedicated full-surface write/read stress testing.
-- Additional vintage partition and filesystem formats.
-- Macintosh SE drive cloning and preservation workflows.
-- Improved stored SMART history for regenerated reports.
-- Batch report and label generation for multiple drives.
-- Additional disk-image verification tools.
-- Media-specific SSD sanitization workflows.
+Planned improvements:
 
-The development priority is to improve DriveBench while processing actual inventory: inspect drives, preserve any authorized data worth recovering, validate the media, generate appropriate documentation, and prepare usable drives for resale or reuse.
+- Create a dedicated output folder for each drive.
+- Use the persistent DriveBench record ID as the primary folder identifier.
+- Standardize a shared sortable filename prefix across all drive artifacts.
+- Keep reports, labels, images, and future diagnostics together.
+- Render the detailed drive-report PDF into a matching high-resolution PNG.
+- Allow marketplace images to be used in eBay and Facebook Marketplace listings.
+- Preserve the same verified test information across PDF and image exports.
+- Avoid automatically deleting or relocating existing legacy reports.
+
+Proposed folder structure:
+
+```text
+~/DriveBench-Reports/
+  DB-000003-SEAGATE-ST318406LW/
+    DB-000003-SEAGATE-ST318406LW-report.pdf
+    DB-000003-SEAGATE-ST318406LW-report.png
+    DB-000003-SEAGATE-ST318406LW-label-3x1.pdf
+    DB-000003-SEAGATE-ST318406LW-label-2p25x4.pdf
+    DB-000003-SEAGATE-ST318406LW-label-4x6.pdf
+```
+
+The final filename convention should incorporate the hardware serial when available, while keeping a stable DriveBench record ID as the primary identifier.
+
+### Additional planned improvements
+
+- Native ZPL printing for compatible Zebra printers.
+- Improved TestDisk result interpretation and search completion reporting.
+- Clearer PhotoRec source and destination verification.
+- Free-space checks before recovery.
+- Smart File Discovery and Recovery from mounted filesystems.
+- Configurable discovery profiles for documents, images, videos, and backups.
+- Selective verified file copying to separate storage.
+- Per-region surface maps showing zero-filled and nonzero data.
+- Better persistent SMART history.
+- Dedicated write/read surface stress testing.
+- Additional vintage filesystems.
+- Macintosh SE disk cloning and preservation.
+- Batch report and label generation.
+- Additional disk-image verification.
+- Appropriate SSD-specific sanitization methods.
+
+DriveBench development is guided by practical work processing real storage inventory: identify the disk, inspect its condition, preserve authorized data where appropriate, evaluate the media, document the results, and prepare the drive for resale or reuse.
