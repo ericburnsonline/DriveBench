@@ -42,6 +42,8 @@ python3 -m drivebench
 - Generate PDF labels for antistatic drive bags.
 - Support **3 × 1, 2.25 × 4, and 4 × 6-inch labels**.
 - Include drive identification and available verified test results on labels.
+- Retain the selected drive across analysis, preparation, reporting, and label operations.
+- Show the running DriveBench version in key submenus and revalidate the selected device before each new action.
 - Check GitHub branches and download staged updates without automatically replacing installed code.
 
 Not yet implemented: direct Zebra/ZPL label printing, marketplace report images, per-drive output folders, device-native SSD secure erase, dedicated write/read surface stress testing, and Macintosh HFS/Apple Partition Map creation.
@@ -136,9 +138,12 @@ DR I V E B E N C H  v0.4.5  |  Ubuntu drive workstation
  0. Exit
 ```
 
-After selecting a drive:
+After selecting a drive, the version and selected target appear above the drive-specific menu:
 
 ```text
+SELECTED DRIVE  |  DriveBench v0.4.5
+ Target: /dev/sdX  18GB  ST318406LW  DB-000003  [DISCOVERED]
+ Serial: (verify the device-reported serial)
  1. View full drive details
  2. View partitions
  3. Mount a partition read-only
@@ -152,8 +157,33 @@ After selecting a drive:
 11. Raw disk analysis / evidence & recovery
 12. Generate / print PDF drive report
 13. Generate antistatic bag label PDF
- 0. Back
+ 0. Back to main menu / select another drive
 ```
+
+The device path and status shown above are examples, not fixed drive identities. Linux may reassign `/dev/sdX` names after disks are connected or removed.
+
+## Work with one selected drive (v0.4.5)
+
+You no longer need to select the same physical drive again after every operation. Choose **Main menu → 2. Select drive** once, confirm the DriveBench record ID and the hardware identifiers, then work through the drive-specific menu.
+
+For example, the preparation and documentation workflow is:
+
+1. Choose **9. Wipe / format / write drive report** for a drive you have intentionally selected for destructive preparation. Follow all device checks and confirmations.
+2. Select **0. Back** to return to the same drive menu.
+3. Choose **11. Raw disk analysis / evidence & recovery** to perform a post-wipe full read-only evidence scan, if desired. Return with **0**.
+4. Choose **12. Generate / print PDF drive report** and generate or regenerate the full-page PDF. Return with **0**.
+5. Choose **13. Generate antistatic bag label PDF** and select a size. Repeat option 13 from the same selected-drive menu for additional sizes.
+6. Choose **0** from the selected-drive menu only when you want to return to the main menu or select a different drive.
+
+DriveBench displays its installed version in the selected-drive menu, key submenus, and choice menus. This helps distinguish the currently running checkout from another downloaded version.
+
+### Safety when disks are added or removed
+
+DriveBench refreshes the disk inventory and checks the selected drive identity before each new action from the selected-drive menu. If the selected device disappears, is replaced, changes Linux device path, or its associated saved record changes, **DriveBench invalidates the selection and requires you to choose the physical drive again**. It does not silently follow another drive that appears under an old `/dev/sdX` name.
+
+Keeping a drive selected is a convenience, **not** a bypass of the existing checks. Destructive operations retain their separate device-identity verification and confirmation requirements. After changing cables, swapping disks, or attaching recovery drives, explicitly verify the current physical drive before wiping or formatting. Do not hot-swap SCSI devices.
+
+Adding a drive or slot exclusion returns to the main menu deliberately, so an excluded target cannot continue through the active-drive workflow without reselection.
 
 ## Printable PDF drive reports (v0.4.4)
 
@@ -172,7 +202,7 @@ The PDFs are saved on the Ubuntu workstation. They are not written to the disk b
 5. Choose **12. Generate / print PDF drive report**.
 6. Select **1. Generate / regenerate PDF**.
 7. Optionally include current SMART/SCSI information.
-8. DriveBench displays the saved PDF location.
+8. DriveBench displays the saved PDF location. Return with **0** to the same selected-drive menu to create labels or run another operation.
 
 Existing reports require the explicit `REGENERATE` confirmation before replacement.
 
@@ -305,7 +335,7 @@ ANTISTATIC BAG LABEL SIZE
 
 DriveBench saves the PDF without writing anything to the source disk or submitting a printer job.
 
-If the file already exists, type `REGENERATE` to replace it.
+If the file already exists, type `REGENERATE` to replace it. After generating a label, you return to the selected-drive menu and can choose option **13** again to generate the other sizes without reselecting the drive.
 
 ### Generate a label from saved history
 
@@ -763,6 +793,8 @@ The v0.4.5 label tests are intended to cover:
 - Regeneration confirmation
 - Generation from saved history
 - CLI menu integration
+- Persistent selected-drive navigation and version headings
+- Device-path, hardware-identity, and record-change rejection
 - No automatic printer submission
 
 Tests use simulated drive records rather than destructive operations on physical hardware.
@@ -811,6 +843,7 @@ The final filename convention should incorporate the hardware serial when availa
 - Selective verified file copying to separate storage.
 - Per-region surface maps showing zero-filled and nonzero data.
 - Better persistent SMART history.
+- Persist wipe verification details (method, passes, timing, and readback outcome) in saved logs and seller-facing reports, clearly separated from post-wipe surface scans and not described as certified sanitization.
 - Dedicated write/read surface stress testing.
 - Additional vintage filesystems.
 - Macintosh SE disk cloning and preservation.
