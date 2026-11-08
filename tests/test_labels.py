@@ -462,17 +462,47 @@ class LabelPDFTests(unittest.TestCase):
 class LabelMenuTests(unittest.TestCase):
 
     def test_drive_menu_option_13_opens_labels(self):
+        # The selected-drive menu now persists after a submenu returns.
+        # Provide a second choice to exit, and mock drive verification so
+        # this test cannot enumerate or touch actual hardware.
         with patch.object(
             cli,
             "_ask",
-            return_value="13"
+            side_effect=["13", "0"]
         ), patch.object(
+            cli,
+            "_refresh_selected_disk",
+            return_value=dict(DISK)
+        ) as refresh, patch.object(
             cli,
             "_bag_label_menu"
         ) as selected:
             cli._disk_menu(dict(DISK))
 
+        refresh.assert_called_once()
         selected.assert_called_once_with(DISK)
+
+    def test_can_generate_labels_twice_without_reselecting_drive(self):
+        # Two label operations should use the same selected drive and
+        # return to its menu, rather than returning to the main menu.
+        with patch.object(
+            cli,
+            "_ask",
+            side_effect=["13", "13", "0"]
+        ), patch.object(
+            cli,
+            "_refresh_selected_disk",
+            return_value=dict(DISK)
+        ) as refresh, patch.object(
+            cli,
+            "_bag_label_menu"
+        ) as selected:
+            cli._disk_menu(dict(DISK))
+
+        self.assertEqual(refresh.call_count, 2)
+        self.assertEqual(selected.call_count, 2)
+        for call in selected.call_args_list:
+            self.assertEqual(call.args[0], DISK)
 
     def test_history_option_5_works_without_connected_drive(self):
         with patch.object(
