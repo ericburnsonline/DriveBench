@@ -35,12 +35,16 @@
 - Extend automated regression coverage to include all three PDF sizes, complete serial numbers, operator IDs, verified scan summaries, safe regeneration, and menu integration.
 - Generate PDFs without automatically submitting printer jobs.
 - Keep direct Zebra/ZPL printing outside the scope of this release.
+- Keep the selected drive active after exiting analysis, preparation, identification, report, and label submenus rather than returning to the main menu.
+- Refresh and revalidate the selected drive before the next operation; require explicit reselection if the device path, identity, or associated record changes.
+- Show the installed DriveBench version in selected-drive and other submenu headings for easier version troubleshooting.
+- Expand mocked regression tests for persistent navigation and drive-identity changes without accessing physical disks.
 
 **Label limitations:** Bag labels summarize recorded diagnostic results. They do not certify secure sanitization, factory-new condition, or the absence of previously stored data. Generating a label does not modify the source disk.
 
 **Validation status:** Automated regression testing and physical printing of the new 3 × 1-inch format must be completed before merging this release.
 
-**Future reporting improvements:** Per-drive output folders, consistent sortable filenames across all artifacts, and marketplace-ready PNG images are planned for v0.4.6.
+**Future reporting improvements:** Per-drive output folders, consistent sortable filenames across all artifacts, and marketplace-ready PNG images are planned for v0.4.6. Wipe-operation verification details should also be incorporated into future persistent logs and seller-facing reports.
 
 ## 0.4.4 — Printable PDF drive reports
 
