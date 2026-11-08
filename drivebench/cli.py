@@ -70,8 +70,38 @@ def _ask(prompt: str) -> str:
     return input(prompt).strip()
 
 
+def _heading(title: str) -> None:
+    """Display the installed application version in each menu."""
+    print(f"\n{title}  |  DriveBench v{__version__}")
+
+
+def _refresh_selected_disk(disk: dict) -> dict:
+    """Keep a selection current without trusting an old /dev path.
+
+    Re-check the physical identity on every selection. If a disk is
+    removed, replaced, or renumbered, require explicit reselection.
+    Never silently follow a newly allocated /dev/sdX device name.
+    """
+    matches = [d for d in snapshot()["disks"]
+               if d.get("path") == disk.get("path")]
+    if len(matches) != 1 or not processing._same(disk, matches[0]):
+        raise UserError(
+            "Selected drive is missing or its hardware identity/connection "
+            "changed. Return to the drive list and select it again."
+        )
+    fresh = matches[0]
+    previous_record = disk.get("record_id")
+    current_record = fresh.get("record_id")
+    if previous_record and previous_record != current_record:
+        raise UserError(
+            "Selected drive's persistent record changed. Return to the "
+            "drive list and verify the record before continuing."
+        )
+    return fresh
+
+
 def _pick(items: list, heading: str, describe) -> tuple[int, object] | None:
-    print("\n" + heading)
+    _heading(heading)
     for i, item in enumerate(items, 1):
         print(f" {i:>2}. {describe(item)}")
     if not items:
@@ -185,7 +215,7 @@ def _remove_exclusion() -> None:
 
 def _config_menu() -> None:
     while True:
-        print("\nEXCLUSIONS / CONFIGURATION")
+        _heading("EXCLUSIONS / CONFIGURATION")
         print(" 1. Ignore a disk or physical slot")
         print(" 2. Ignore a SCSI/SAS/RAID controller")
         print(" 3. Remove an exclusion")
@@ -245,7 +275,7 @@ def _health_menu(disk: dict) -> None:
 
 
 def _network_update_menu() -> None:
-    print("\nGITHUB UPDATE CHECK (download only, no automatic installation)")
+    _heading("GITHUB UPDATE CHECK (download only, no automatic installation)")
     print("Repository: https://github.com/ericburnsonline/DriveBench")
     available = updates.branches()
     if not available:
@@ -296,7 +326,7 @@ def _session_key(disk: dict) -> tuple:
 
 def _processing_menu(disk: dict) -> None:
     while True:
-        print("\nDRIVE PREPARATION (DESTRUCTIVE)")
+        _heading("DRIVE PREPARATION (DESTRUCTIVE)")
         print("Target:", _disk_desc(disk))
         print(" 1. Wipe entire physical disk (zero / random; 1-10 passes)")
         print(" 2. Create partition and format FAT32 or exFAT")
@@ -344,7 +374,7 @@ def _processing_menu(disk: dict) -> None:
 def _raw_analysis_menu(disk: dict) -> None:
     """Read-only evidence inspection, optional imaging and file recovery."""
     while True:
-        print('\nRAW DISK ANALYSIS / RECOVERY')
+        _heading("RAW DISK ANALYSIS / RECOVERY")
         print(' Target:', _disk_desc(disk))
         print(' 1. Quick evidence scan (sampled read-only)')
         print(' 2. Full evidence scan (entire disk read-only)')
@@ -406,7 +436,7 @@ def _identification_menu(disk: dict) -> None:
         if not current or not processing._same(disk, current):
             raise UserError('Disk changed. Return to drive list and rescan.')
         rec = store.read_state().get('records', {}).get(current.get('record_id'), {})
-        print('\nDRIVE IDENTIFICATION')
+        _heading("DRIVE IDENTIFICATION")
         print(' Device:', current['path'], current.get('model'), inv.sizestr(current['size']))
         print(' Detected hardware serial:', current.get('serial') or '(unavailable)',
               ' / source:', current.get('serial_source') or 'unavailable')
@@ -522,7 +552,7 @@ def _pdf_report_menu(disk: dict) -> None:
     filename = reports.report_filename(fresh, record)
     target = destination / filename
     while True:
-        print('\nPRINTABLE DRIVE REPORT (NO DISK WRITES)')
+        _heading("PRINTABLE DRIVE REPORT (NO DISK WRITES)")
         print(' Destination:', target)
         print(' 1. Generate / regenerate PDF from saved drive results')
         print(' 2. Print saved PDF through Ubuntu (CUPS)')
@@ -590,7 +620,7 @@ def _create_bag_label(disk: dict, record: dict) -> None:
     filename = labels.label_filename(disk, record, size=size)
     target = destination / filename
 
-    print("\nANTISTATIC BAG LABEL")
+    _heading("ANTISTATIC BAG LABEL")
     print(" Drive:", disk.get("model") or "(unknown)")
     print(" Size:", size, "inches")
     print(" PDF:", target)
@@ -636,8 +666,16 @@ def _bag_label_menu(disk: dict) -> None:
 
 
 def _disk_menu(disk: dict) -> None:
+    """Keep the selected drive active across all operations.
+
+    Before each selection, refresh the current hardware identity. A
+    renumbered, disconnected, or replaced device forces reselection.
+    Destructive operations still perform their own independent preflight.
+    """
     while True:
-        print("\nDRIVE:", _disk_desc(disk))
+        _heading("SELECTED DRIVE")
+        print(" Target:", _disk_desc(disk))
+        print(" Serial:", disk.get("serial") or "(not reported)")
         print(" 1. View full drive details")
         print(" 2. View partitions")
         print(" 3. Mount a partition read-only")
@@ -651,61 +689,67 @@ def _disk_menu(disk: dict) -> None:
         print("11. Raw disk analysis / evidence & recovery")
         print("12. Generate / print PDF drive report (non-destructive)")
         print("13. Generate antistatic bag label PDF (non-destructive)")
-        print(" 0. Back")
+        print(" 0. Back to main menu / select another drive")
         choice = _ask("Selection: ")
         if choice == "0":
             return
-        if choice == "1":
-            _show_disk_details(disk)
-        elif choice == "2":
-            for p in disk["partitions"]:
-                print("  " + _part_desc(p))
-            if not disk["partitions"]:
-                print("No partitions discovered")
-        elif choice == "3":
-            current = next((d for d in snapshot()["disks"] if d["path"] == disk["path"]), None)
-            if (not current or current["identity"] != disk["identity"] or
-                    current["size"] != disk["size"] or current["serial"] != disk["serial"]):
-                raise UserError("Disk changed during selection; return to drive list and rescan")
-            _mount_partition_menu(current)
-        elif choice == "4":
-            _add_exclusion_disk(disk)
-            return
-        elif choice == "5":
-            _single_history_menu(disk.get("record_id"))
-        elif choice in ("6", "7", "8"):
-            current = next((d for d in snapshot()["disks"] if d["path"] == disk["path"]), None)
-            if (not current or current["identity"] != disk["identity"] or
-                    current["size"] != disk["size"] or current["serial"] != disk["serial"]):
-                raise UserError("Disk changed during selection; return to drive list and rescan")
-            if choice == "6":
-                _filesystem_menu(current)
-            elif choice == "7":
-                _health_menu(current)
-            else:
-                priv = _ask("Use sudo for SCSI LOG SENSE reading? (y/N): ").lower() == 'y'
-                print(diagnostics.scsi_log_report(current['path'], sudo=priv))
-        elif choice == "11":
-            _raw_analysis_menu(disk)
-            return
-        elif choice == "12":
-            _pdf_report_menu(disk)
-            return
-        elif choice == "13":
-            _bag_label_menu(disk)
-            return
-        elif choice == "10":
-            _identification_menu(disk)
-            return
-        elif choice == "9":
-            _processing_menu(disk)
-            return
-        else:
+        if choice not in {str(n) for n in range(1, 14)}:
             print("Unknown selection")
+            continue
+
+        # Refresh before every action, including reports, inventory and history.
+        # Never silently rebind an old /dev/sdX to a different physical disk.
+        try:
+            disk = _refresh_selected_disk(disk)
+        except UserError as exc:
+            print("\nDRIVE SELECTION INVALIDATED:", exc)
+            return
+
+        try:
+            if choice == "1":
+                _show_disk_details(disk)
+            elif choice == "2":
+                for part in disk["partitions"]:
+                    print("  " + _part_desc(part))
+                if not disk["partitions"]:
+                    print("No partitions discovered")
+            elif choice == "3":
+                _mount_partition_menu(disk)
+            elif choice == "4":
+                _add_exclusion_disk(disk)
+                # An explicitly excluded disk must be reselected before
+                # another operation is attempted.
+                return
+            elif choice == "5":
+                _single_history_menu(disk.get("record_id"))
+            elif choice == "6":
+                _filesystem_menu(disk)
+            elif choice == "7":
+                _health_menu(disk)
+            elif choice == "8":
+                priv = _ask("Use sudo for SCSI LOG SENSE reading? (y/N): ").lower() == 'y'
+                print(diagnostics.scsi_log_report(disk['path'], sudo=priv))
+            elif choice == "9":
+                _processing_menu(disk)
+            elif choice == "10":
+                _identification_menu(disk)
+            elif choice == "11":
+                _raw_analysis_menu(disk)
+            elif choice == "12":
+                _pdf_report_menu(disk)
+            elif choice == "13":
+                _bag_label_menu(disk)
+        except (UserError, inv.InventoryError, mounts.MountError,
+                diagnostics.DiagnosticError, processing.ProcessingError,
+                raw_analysis.AnalysisError, reports.ReportError,
+                ValueError, RuntimeError, OSError) as exc:
+            # A normal error does not discard the user's selected drive.
+            # The next menu action still starts with fresh identity validation.
+            print("\nERROR:", exc)
 
 
 def _show_mounts() -> None:
-    print("\nDRIVEBENCH MOUNT HISTORY AND LIVE STATUS")
+    _heading("DRIVEBENCH MOUNT HISTORY AND LIVE STATUS")
     entries = mounts.active_managed()
     if not entries:
         print(" No partitions mounted through DriveBench yet.")
@@ -739,7 +783,7 @@ def _single_history_menu(record_id: str | None) -> None:
         if not record:
             print("Record not found")
             return
-        print(f"\nDRIVE {record_id} HISTORY  [{record['status']}]")
+        _heading(f"DRIVE {record_id} HISTORY  [{record['status']}]")
         print(" 1. View complete record")
         print(" 2. Add note")
         print(" 3. Record a wipe done outside DriveBench (operator report only)")
@@ -802,7 +846,7 @@ def _history_menu() -> None:
 def _first_run() -> None:
     if store.read_config().get("setup_complete"):
         return
-    print("\nFIRST-RUN SETUP")
+    _heading("FIRST-RUN SETUP")
     print("System disks are always protected. You can ignore other disks/controllers now or later.")
     _show_disks(snapshot())
     while _ask("Configure exclusions now? (y/N): ").lower() == "y":
