@@ -1,3 +1,4 @@
+
 """Non-destructive PDF report and CUPS submission tests."""
 import tempfile
 import unittest
@@ -105,10 +106,27 @@ class ReportMenuTests(unittest.TestCase):
         from drivebench import cli
         d = dict(DISK, record_id='DB-000002', status='DISCOVERED',
                  reasons=[], confidence='strong', partitions=[])
-        with patch.object(cli, '_ask', return_value='12'), \
+        # Selected-drive menus persist after a report; explicitly exit on 0.
+        # Mock the refresh so no physical devices are queried.
+        with patch.object(cli, '_ask', side_effect=['12', '0']), \
+             patch.object(cli, '_refresh_selected_disk', return_value=d) as refresh, \
              patch.object(cli, '_pdf_report_menu') as menu:
             cli._disk_menu(d)
+        refresh.assert_called_once_with(d)
         menu.assert_called_once_with(d)
+
+    def test_can_generate_two_reports_without_reselecting_drive(self):
+        from drivebench import cli
+        d = dict(DISK, record_id='DB-000002', status='DISCOVERED',
+                 reasons=[], confidence='strong', partitions=[])
+        with patch.object(cli, '_ask', side_effect=['12', '12', '0']), \
+             patch.object(cli, '_refresh_selected_disk', return_value=d) as refresh, \
+             patch.object(cli, '_pdf_report_menu') as menu:
+            cli._disk_menu(d)
+        self.assertEqual(refresh.call_count, 2)
+        self.assertEqual(menu.call_count, 2)
+        for call in menu.call_args_list:
+            self.assertEqual(call.args[0], d)
 
     def test_history_can_regenerate_when_disk_disconnected(self):
         from drivebench import cli
