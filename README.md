@@ -1,70 +1,130 @@
 
 # DriveBench: Ubuntu drive inspection, recovery, and reporting
 
-DriveBench is a **terminal menu-based** utility for an Ubuntu storage-test bench with SCSI adapters, USB-to-IDE/SATA bridges, and normal SATA/IDE drives. **There are no CLI subcommands to learn.** Start it with `./start-drivebench.sh` (or `python3 -m drivebench` from the project directory). All functions are selected using numbered menus.
+DriveBench is a terminal-based drive inspection and preparation utility for Ubuntu Linux. It is designed for workstations testing SCSI, IDE, SATA, and USB-connected storage devices.
+
+DriveBench uses numbered menus rather than command-line subcommands.
+
+Launch from the project directory:
+
+```bash
+bash start-drivebench.sh
+```
+
+Or:
+
+```bash
+python3 -m drivebench
+```
+
+**Always run DriveBench as your normal user, not as root.**
 
 ## Features
 
-- Drives, partitions, bus types, serial numbers, SCSI host/target information, and SCSI/SAS/RAID controller discovery.
-- Persistent disk and SCSI-controller exclusions; protective handling of system disks.
-- Persistent drive records, with stable IDs across reboots when a trustworthy hardware serial or WWN is available. Records never automatically become “wiped” simply because a drive was seen again.
-- **Read-only** partition mounting under `/mnt/drivebench/` with a **new uniquely numbered subdirectory for every mount** (such as `/mnt/drivebench/DB-000001-sdc1-001/`), plus an unmount menu.
-- Tracks DriveBench-created mounts in local state; compares them with **live kernel mount information** whenever displaying mount status. Old mounts do not get treated as active after reboot.
-- Lists mount points created outside DriveBench, but does not manage their unmounts.
-- **Read-only filesystem probing** of whole disks and partitions using `blkid -p` and `wipefs --no-act`, including explicit cautions for unrecognized or ambiguous signatures.
-- **Device health reports** via `smartctl` (ATA/SCSI/SAS/NVMe where supported) and optional `sg_logs` for older SCSI LOG SENSE counters. Unsupported attributes are shown as unavailable, never assumed healthy.
-- **GitHub update checker:** list public branches, display exact commit identifiers, download a selected commit ZIP into `/tmp/drivebench-updates/` with `wget`, and compare downloaded files with installed files. **No code is overwritten automatically.**
-- **SCSI duplicate-enumeration warning** when a drive model/capacity appears across eight or more target IDs on the same host/channel.
-- Dependency checker with exact Ubuntu installation commands; PDF generation and printing are optional and do not block other DriveBench features.
-- Menu to log operator notes and a **clearly unverified, operator-reported** wipe performed outside the tool; DriveBench supports supervised whole-disk wiping, FAT32/exFAT formatting, and on-disk reports.
-- **Drive identification menu:** retry drive-native serial inquiry using `smartctl -i -j` or SCSI VPD (`sg_inq`), with an optional sudo retry for the selected disk. USB adapters are not trusted unless ATA pass-through exposes the drive's own serial.
-- **Operator labels:** enter a manual serial and/or asset ID for each drive, stored immediately with atomic, fsynced writes to private persistent history. Manual data is never silently promoted to a verified hardware identity.
-- **Uniform-byte analysis:** report whether `0x00`, `0xFF`, `0x6C`, or any other single byte fills all examined data. A successful complete read may verify the entire *readable logical surface*; quick scans only establish results for the sampled regions. Findings are saved in analysis history.
-- **Printable PDF reports:** create or regenerate a seller-facing, letter-size PDF from saved drive identification and completed scans, optionally add current SMART data, and submit an existing PDF to a configured Ubuntu CUPS printer. The original drive is not modified. Reports link to this GitHub repository.
+- Discover disks, partitions, interfaces, serial numbers, SCSI addresses, and storage controllers.
+- Identify drives using hardware serial numbers, operator-entered serial numbers, and asset IDs.
+- Maintain persistent drive history across reboots.
+- Protect system disks and support explicit drive, slot, and controller exclusions.
+- Mount supported partitions read-only.
+- Inspect filesystem and partition signatures.
+- Collect SMART and SCSI health information.
+- Perform quick or full read-only raw-media evidence scans.
+- Detect recognizable file signatures and potential filesystem structures.
+- Verify uniform-byte patterns across examined data.
+- Record completed, interrupted, and failed analysis operations.
+- Investigate lost partitions with TestDisk.
+- Recover files using PhotoRec to a separate destination disk.
+- Create disk images using GNU ddrescue.
+- Perform supervised destructive overwrites and formatting.
+- Generate detailed, printable PDF drive reports.
+- Regenerate reports from saved history after disconnecting a drive.
+- Submit letter-size PDF reports to configured Ubuntu CUPS printers.
+- Generate PDF labels for antistatic drive bags.
+- Support **3 × 1, 2.25 × 4, and 4 × 6-inch labels**.
+- Include drive identification and available verified test results on labels.
+- Retain the selected drive across analysis, preparation, reporting, and label operations.
+- Show the running DriveBench version in key submenus and revalidate the selected device before each new action.
+- Check GitHub branches and download staged updates without automatically replacing installed code.
 
-**Not included yet:** a dedicated *write/read* surface stress test, device-native SSD secure erase, Zebra label printing, and Macintosh HFS/Apple Partition Map creation. SMART/device-log inspection is included, but is not a surface test.
+Not yet implemented: direct Zebra/ZPL label printing, marketplace report images, per-drive output folders, device-native SSD secure erase, dedicated write/read surface stress testing, and Macintosh HFS/Apple Partition Map creation.
 
-## Install on Ubuntu Server
+## Installation
 
-In a terminal **logged in as your usual (non-root) user**, install system commands:
+### Required Ubuntu packages
 
 ```bash
 sudo apt update
 sudo apt install -y python3 util-linux udev pciutils sudo coreutils
-# Diagnostics, GitHub updates, wiping, formatting and verification:
+```
+
+Additional diagnostic and preparation utilities:
+
+```bash
 sudo apt install -y smartmontools sg3-utils wget git parted dosfstools exfatprogs diffutils
-# Optional recovery and imaging tools:
+```
+
+Optional recovery utilities:
+
+```bash
 sudo apt install -y testdisk gddrescue
-# Optional PDF generation and Ubuntu printer support:
+```
+
+Optional PDF generation and printing:
+
+```bash
 sudo apt install -y python3-reportlab cups-client
 ```
 
-Ubuntu typically already includes almost all of these. DriveBench checks them every time it opens and provides the exact apt command for any that are missing. In the menu, choose **9. Check Ubuntu components / installation help** to repeat the check. `sudo` and `mount`/`umount` are required for the mount options, but inventory works without elevated privileges.
+Both full-page reports and bag-label PDFs use ReportLab.
 
-Download the latest source archive from [the DriveBench repository](https://github.com/ericburnsonline/DriveBench) using **Code → Download ZIP**, extract it into a fresh directory, and open a terminal inside the extracted repository root. From there:
+Verify that ReportLab is available:
 
 ```bash
-bash run-tests.sh
-bash start-drivebench.sh
+python3 -c "import reportlab; print(reportlab.Version)"
 ```
 
-Alternatively, use Git to check out the repository:
+If DriveBench runs inside a Python virtual environment, ReportLab must also be installed in that environment.
+
+CUPS is required only for submitting print jobs through Ubuntu. PDF generation does not require CUPS or a connected printer.
+
+### Download DriveBench
+
+Repository:
+
+https://github.com/ericburnsonline/DriveBench
+
+Select **Code → Download ZIP**, extract the archive, and open a terminal in the extracted directory.
+
+Alternatively:
 
 ```bash
 git clone https://github.com/ericburnsonline/DriveBench.git
 cd DriveBench
-bash run-tests.sh
+```
+
+For testing an unmerged feature, download or check out the appropriate branch instead of `main`.
+
+### Start DriveBench
+
+```bash
 bash start-drivebench.sh
 ```
 
-To test a particular branch before it is merged, select that branch in GitHub before downloading its ZIP, or switch branches using Git. The core application requires no third-party Python packages. PDF generation additionally needs `reportlab` in the Python interpreter running DriveBench; Ubuntu system Python can usually use the `python3-reportlab` package. If using a virtual environment, install ReportLab into that environment. Run future sessions from your extracted/checked-out project directory using `bash start-drivebench.sh`.
+Run the automated tests:
 
-Run as your ordinary user, **not `sudo python3 -m drivebench`**. DriveBench refuses to launch as root. Its Python interface, scan, and history always run as the normal user. Only selected device operations (such as mount/unmount, raw diagnostics, wiping, formatting, or the on-drive text report) invoke `sudo`. PDF creation and CUPS printing run as the normal user. Wipe and format each require two typed confirmations. Sudo may ask for your login password on the terminal, depending on your local sudo policy. On a headless Ubuntu Server, this is expected to work over an interactive SSH terminal if your account is authorized to run sudo. If your account lacks sudo access, ask the server administrator to grant the appropriate rights; discovery and the other menus remain available.
+```bash
+bash run-tests.sh
+```
 
-## Menus
+DriveBench requests elevated privileges only for operations that require them.
+
+Do not launch the complete application using `sudo`.
+
+## Main menu
 
 ```text
-DR I V E B E N C H  v0.4.4  |  Ubuntu drive workstation
+DR I V E B E N C H  v0.4.5  |  Ubuntu drive workstation
+
  1. Scan disks and partitions
  2. Select drive (inspect / mount / history)
  3. List all mount points and mount status
@@ -78,55 +138,308 @@ DR I V E B E N C H  v0.4.4  |  Ubuntu drive workstation
  0. Exit
 ```
 
-From **2. Select drive**, choose **9. Wipe / format / write drive report** for supervised preparation, **10. Identify drive**, **11. Raw disk analysis / evidence & recovery**, or **12. Generate / print PDF drive report**.
-
-### Printable PDF drive reports and Ubuntu printing
-
-The PDF feature creates a **seller-facing, letter-size report on the Ubuntu workstation**, without partitioning, formatting, or writing anything to the drive under test. This is separate from **9 → 3. Write `DRIVEBENCH-REPORT.txt`**, which deliberately writes a text file to a DriveBench-formatted partition. You do **not** need to format a drive to make a PDF.
-
-**Requirements** (optional; other menus continue to work without them):
-
-```bash
-sudo apt update
-sudo apt install -y python3-reportlab cups-client
-python3 -c "import reportlab; print(reportlab.Version)"
-lpstat -e   # lists available CUPS printers
-lpstat -d   # displays the default destination, if configured
-```
-
-The printer must be configured **on the Ubuntu machine running DriveBench**. If you connect over SSH, a printer configured only on your Windows desktop will not automatically appear in the Ubuntu CUPS list. Set up an appropriate CUPS queue or default printer using Ubuntu's printing tools first. DriveBench does not install or configure printers. Choose **main menu 9** to check optional dependencies.
-
-**Generate a PDF while the drive is connected:**
-
-1. Launch `bash start-drivebench.sh` as your normal user.
-2. Choose **2. Select drive**, then select the correct physical drive and verify its model and serial number.
-3. Choose **12. Generate / print PDF drive report (non-destructive)**.
-4. Choose **1. Generate / regenerate PDF from saved drive results**. If the destination PDF already exists, type `REGENERATE` to replace it; otherwise it is preserved.
-5. Optionally collect a **current read-only SMART/SCSI snapshot**. Raw-drive access may need sudo authentication. If you decline, or the inquiry fails, the PDF is generated from existing saved results and does not invent a health-test pass.
-6. DriveBench saves the PDF on the Ubuntu workstation and prints the full path. **It does not automatically submit a print job.**
-
-**Print the PDF:** Choose **12 → 2. Print saved PDF through Ubuntu (CUPS)**, then select the Ubuntu default printer or an available named printer and type `PRINT` to submit **one copy**. The initial print settings are **US Letter, single-sided**. CUPS accepting a job is not proof that paper was produced; check your printer or queue if necessary.
-
-**Regenerate later, even if the drive has been disconnected:** Choose **main menu 8. Drive history**, select the saved drive record, then **4. Generate / regenerate a PDF from saved history**. This uses the stored identification and completed analysis history without accessing the original drive. It does not automatically reconstruct live SMART readings that were never saved in that record. Existing PDFs require explicit `REGENERATE` confirmation before replacement.
-
-**Report location and filename:** PDFs are saved by default in `~/DriveBench-Reports/`, using a deterministic filename containing manufacturer, interface, model, decimal capacity, and drive serial (or an explicitly identified operator/record ID if the device has no reliable serial). For example:
+After selecting a drive, the version and selected target appear above the drive-specific menu:
 
 ```text
-~/DriveBench-Reports/Seagate-scsi-ST318406LW-18GB-SN-S3XYZ987.pdf
+SELECTED DRIVE  |  DriveBench v0.4.5
+ Target: /dev/sdX  18GB  ST318406LW  DB-000003  [DISCOVERED]
+ Serial: (verify the device-reported serial)
+ 1. View full drive details
+ 2. View partitions
+ 3. Mount a partition read-only
+ 4. Add disk exclusion
+ 5. View history / add note / manual wipe report
+ 6. Inspect filesystem / partition signatures
+ 7. Show SMART / SCSI drive-health details
+ 8. Show detailed SCSI log pages
+ 9. Wipe / format / write drive report (DESTRUCTIVE)
+10. Identify drive / manually enter serial and asset ID
+11. Raw disk analysis / evidence & recovery
+12. Generate / print PDF drive report
+13. Generate antistatic bag label PDF
+ 0. Back to main menu / select another drive
 ```
 
-A regenerated report uses the same filename for the same drive information, making it easy to replace a report when additional tests become available. The PDF includes a footer with the DriveBench version and [project URL](https://github.com/ericburnsonline/DriveBench). The report is designed to be expandable with further test sections as DriveBench gains new features.
+The device path and status shown above are examples, not fixed drive identities. Linux may reassign `/dev/sdX` names after disks are connected or removed.
 
-**What is included:** available identification, capacity, the latest completed full raw-disk scan, verified uniform-byte findings if present, and explicitly collected device-health data when supported. Missing or unrecorded tests are not reported as passed. The seller-facing report does **not** include recovered filenames, personal file contents, or full internal recovery history. It does **not** certify secure sanitization or factory-new condition. When publishing or sharing a report, review the serial number and other details first.
+## Work with one selected drive (v0.4.5)
 
-**Labels:** Small stickers for antistatic bags and alternate label sizes are a separate planned layout feature. The initial version produces a full-page PDF, not a Zebra label.
+You no longer need to select the same physical drive again after every operation. Choose **Main menu → 2. Select drive** once, confirm the DriveBench record ID and the hardware identifiers, then work through the drive-specific menu.
 
-### Raw disk evidence scanning and recovery (new in v0.4.2)
+For example, the preparation and documentation workflow is:
 
-Choose **2. Select drive**, select your disk, then **11. Raw disk analysis / evidence & recovery**.
+1. Choose **9. Wipe / format / write drive report** for a drive you have intentionally selected for destructive preparation. Follow all device checks and confirmations.
+2. Select **0. Back** to return to the same drive menu.
+3. Choose **11. Raw disk analysis / evidence & recovery** to perform a post-wipe full read-only evidence scan, if desired. Return with **0**.
+4. Choose **12. Generate / print PDF drive report** and generate or regenerate the full-page PDF. Return with **0**.
+5. Choose **13. Generate antistatic bag label PDF** and select a size. Repeat option 13 from the same selected-drive menu for additional sizes.
+6. Choose **0** from the selected-drive menu only when you want to return to the main menu or select a different drive.
+
+DriveBench displays its installed version in the selected-drive menu, key submenus, and choice menus. This helps distinguish the currently running checkout from another downloaded version.
+
+### Safety when disks are added or removed
+
+DriveBench refreshes the disk inventory and checks the selected drive identity before each new action from the selected-drive menu. If the selected device disappears, is replaced, changes Linux device path, or its associated saved record changes, **DriveBench invalidates the selection and requires you to choose the physical drive again**. It does not silently follow another drive that appears under an old `/dev/sdX` name.
+
+Keeping a drive selected is a convenience, **not** a bypass of the existing checks. Destructive operations retain their separate device-identity verification and confirmation requirements. After changing cables, swapping disks, or attaching recovery drives, explicitly verify the current physical drive before wiping or formatting. Do not hot-swap SCSI devices.
+
+Adding a drive or slot exclusion returns to the main menu deliberately, so an excluded target cannot continue through the active-drive workflow without reselection.
+
+## Printable PDF drive reports (v0.4.4)
+
+DriveBench generates seller-facing, US Letter PDF reports containing saved drive identification and completed diagnostic results.
+
+The PDFs are saved on the Ubuntu workstation. They are not written to the disk being tested.
+
+**A drive does not need to be wiped, partitioned, or formatted to generate a PDF report.**
+
+### Generate a report
+
+1. Launch DriveBench.
+2. Choose **2. Select drive**.
+3. Select the correct physical drive.
+4. Verify the model and serial number.
+5. Choose **12. Generate / print PDF drive report**.
+6. Select **1. Generate / regenerate PDF**.
+7. Optionally include current SMART/SCSI information.
+8. DriveBench displays the saved PDF location. Return with **0** to the same selected-drive menu to create labels or run another operation.
+
+Existing reports require the explicit `REGENERATE` confirmation before replacement.
+
+### Report location
+
+Reports are saved under:
+
+```text
+~/DriveBench-Reports/
+```
+
+Example:
+
+```text
+SEAGATE-spi-ST318406LW-18GB-SN-3FE1WTKP00007310BJH2.pdf
+```
+
+Filenames are based on the available manufacturer, interface, model, capacity, and serial or alternative identifier.
+
+### Report contents
+
+Depending on available records, reports include:
+
+- Manufacturer and model
+- Interface and capacity
+- Hardware-reported serial number
+- Operator-supplied serial or asset ID, clearly distinguished
+- DriveBench inventory ID
+- Completed raw-media scans
+- Full logical-surface read results
+- Verified uniform-byte patterns
+- Optional current SMART/SCSI information
+- DriveBench version and GitHub URL
+
+Missing information is not represented as a successful test.
+
+Recovered filenames, personal file contents, and complete internal recovery history are not included in seller-facing PDFs.
+
+### Regenerate from history
+
+A drive does not need to remain connected.
+
+Choose:
+
+**Main menu → 8. Drive history → select record → 4. Generate / regenerate PDF**
+
+The report uses saved information.
+
+Live SMART readings that were never persisted cannot be reconstructed after disconnecting a drive.
+
+### Print the full-page report
+
+Choose:
+
+**Select drive → 12 → 2. Print saved PDF**
+
+DriveBench uses the Ubuntu CUPS system.
+
+The initial print request specifies:
+
+- US Letter
+- Single-sided
+- One copy
+
+A CUPS job being accepted does not guarantee physical printing.
+
+During development, a DriveBench-generated Seagate report was successfully printed from Windows after transferring the PDF from Ubuntu. Direct Ubuntu printing experienced CUPS/USB issues and remains a separate troubleshooting task.
+
+## Antistatic drive-bag labels (v0.4.5)
+
+DriveBench can generate smaller PDF identification labels for placement on the outside of antistatic bags.
+
+These complement the detailed paper report and help identify drives after packaging.
+
+### Supported label sizes
+
+| Size | Description |
+| --- | --- |
+| **3 × 1 inches** | Compact horizontal label |
+| **2.25 × 4 inches** | Detailed bag identification label |
+| **4 × 6 inches** | Larger identification label |
+
+The programmatic default remains **2.25 × 4 inches** for compatibility, while the interactive menu lists the new **3 × 1-inch** option first.
+
+All dimensions refer to the actual PDF page size.
+
+### Compact 3 × 1-inch labels
+
+The 3 × 1-inch format uses a dedicated horizontal layout.
+
+It prioritizes:
+
+- DriveBench inventory ID
+- Manufacturer
+- Model
+- Capacity
+- Interface
+- Full available serial number
+- Completed full-surface read status
+- Verified uniform-byte information, when available
+- Reference to the detailed report
+- DriveBench GitHub URL
+
+The compact layout uses abbreviated descriptions to conserve space.
+
+A hardware-reported serial is identified with `HW SN`.
+
+An operator-entered identifier is labeled separately and is never presented as firmware-verified.
+
+If a required identifier cannot fit, label generation raises an error instead of silently truncating the serial number.
+
+### Generate a label for a connected drive
+
+1. Launch DriveBench.
+2. Choose **2. Select drive**.
+3. Select and verify the physical drive.
+4. Choose **13. Generate antistatic bag label PDF**.
+5. Select a label size.
+
+The size menu offers:
+
+```text
+ANTISTATIC BAG LABEL SIZE
+
+ 1. 3 x 1 inches (compact)
+ 2. 2.25 x 4 inches
+ 3. 4 x 6 inches
+ 0. Back
+```
+
+DriveBench saves the PDF without writing anything to the source disk or submitting a printer job.
+
+If the file already exists, type `REGENERATE` to replace it. After generating a label, you return to the selected-drive menu and can choose option **13** again to generate the other sizes without reselecting the drive.
+
+### Generate a label from saved history
+
+Choose:
+
+**Main menu → 8. Drive history → select record → 5. Generate / regenerate an antistatic bag label PDF**
+
+This allows labels to be generated after disconnecting the original drive.
+
+When a record uses manually supplied identification, verify that it corresponds to the intended physical disk before applying the label.
+
+### Label file location
+
+Version 0.4.5 saves labels under:
+
+```text
+~/DriveBench-Reports/labels/
+```
+
+Example filenames:
+
+```text
+SEAGATE-spi-ST318406LW-18GB-SN-3FE1WTKP00007310BJH2-bag-label-3x1.pdf
+
+SEAGATE-spi-ST318406LW-18GB-SN-3FE1WTKP00007310BJH2-bag-label-2p25x4.pdf
+
+SEAGATE-spi-ST318406LW-18GB-SN-3FE1WTKP00007310BJH2-bag-label-4x6.pdf
+```
+
+The dimensions are included in filenames so different label formats do not overwrite one another.
+
+Existing labels require explicit confirmation before regeneration.
+
+**Per-drive folders and common sortable filename prefixes are planned for v0.4.6, not v0.4.5.**
+
+### Verified scan results
+
+Labels use saved completed full-scan events.
+
+A full logical-surface read is described as complete only when the stored scan indicates full coverage of the reported disk capacity.
+
+A uniform-byte pattern is described as verified only when the underlying result supports `VERIFIED_FULL_SURFACE`.
+
+Incomplete, failed, or sampled scans must not be represented as completed full-surface verification.
+
+Examples of possible summaries include:
+
+```text
+FULL READ COMPLETE
+Uniform 0x6C: verified
+
+SCAN NOT VERIFIED
+Pattern not verified
+```
+
+A completed full-surface read does not prove that a drive is factory-new or securely sanitized.
+
+Labels are inventory and diagnostic summaries, not sanitization certificates.
+
+### Printing PDF labels
+
+Version 0.4.5 **does not automatically print labels**.
+
+Generate the PDF and print it using a suitable application and configured printer driver.
+
+For Zebra printers:
+
+1. Use a printer loaded with the correct label stock.
+2. Select the matching label dimensions.
+3. Print at **100% / Actual size**.
+4. Disable scaling or fit-to-page.
+5. Confirm the label prints without clipping.
+
+For 3 × 1-inch stock, configure the printer or Windows driver for a 3-inch-wide, 1-inch-long label.
+
+A thermal-transfer label requires a compatible ribbon. Direct-thermal labels do not.
+
+The Zebra GK420t supports both methods, but the printer configuration and media must agree.
+
+A blank printer configuration label indicates a printer/media problem rather than a DriveBench PDF problem.
+
+Do not use DriveBench's letter-size CUPS printing option for small bag labels. It currently requests US Letter media.
+
+### Packaging recommendations
+
+Place the tested drive in a suitable antistatic bag.
+
+Attach the identification label to the outside of the bag.
+
+Keep the manufacturer's original drive label available for inspection.
+
+Include the detailed full-page PDF report as a printed document when appropriate.
+
+Avoid formatting an otherwise unformatted drive simply to add documentation.
+
+## Raw disk analysis and recovery (v0.4.2)
+
+Select:
+
+**2. Select drive → 11. Raw disk analysis / evidence & recovery**
 
 ```text
 RAW DISK ANALYSIS / RECOVERY
+
  1. Quick evidence scan (sampled read-only)
  2. Full evidence scan (entire disk read-only)
  3. Inspect/search partition structures with TestDisk
@@ -136,165 +449,406 @@ RAW DISK ANALYSIS / RECOVERY
  0. Back
 ```
 
-**First, run a quick scan before any wiping or formatting.** It reads samples from the beginning, quarter points, and end of the physical disk. It checks for partition and legacy filesystem markers in the first region, plus common file headers throughout the sampled regions. A full scan then reads the complete accessible disk and counts recognizable signatures (JPEG, PNG, PDF, ZIP, GIF, ELF, SQLite, gzip, RAR) with offsets and a zero-byte ratio. The report does not automatically extract file contents. You may see false positives, embedded files, or fragmented data; **signature hits are *not* guaranteed complete or recoverable files.** High entropy does not demonstrate prior encryption or a successful wipe, and **absence of findings does not mean the drive was never used**.
+### Quick evidence scan
 
-#### Uniform-byte verification (v0.4.3)
+Reads selected areas of the disk.
 
-The uniform-byte check runs as part of the existing quick or full evidence scan; **no extra scan command or write operation is required**. The scanner compares every byte delivered by its read process, rather than inferring uniformity from a few sample sectors or a low entropy estimate. It supports **any single byte value** (`0x00`, `0xFF`, `0x6C`, etc.). Its results appear in the scan summary and are saved with the analysis result in the drive's persistent history.
+Searches for recognizable filesystem structures and file signatures.
 
-| Result status | Meaning |
+Results apply only to sampled regions.
+
+### Full evidence scan
+
+Reads the complete host-accessible logical surface, where possible.
+
+Records:
+
+- Number of bytes examined
+- Scan completion
+- Recognizable signatures
+- Filesystem and partition hints
+- Entropy observations
+- Zero-byte fraction
+- Uniform-byte analysis
+
+Potential file signatures include JPEG, PNG, PDF, ZIP, GIF, ELF, SQLite, gzip, and RAR.
+
+Signature matches are only candidates. They do not prove that complete files can be recovered.
+
+No detected signature does not prove that the drive was never used.
+
+### Uniform-byte verification (v0.4.3)
+
+Uniform-byte analysis is integrated into the quick and full scans.
+
+It supports any byte value, including:
+
+- `0x00`
+- `0xFF`
+- `0x6C`
+
+Possible results:
+
+| Result | Meaning |
 | --- | --- |
-| `VERIFIED_FULL_SURFACE` | A successful full scan read the reported logical disk capacity, and every examined byte matched the reported `byte_hex`. This applies only to the host-readable logical address space. |
-| `SAMPLED_OR_PARTIAL_ONLY` | Every examined byte matched, but coverage was not a completed full-surface scan. Unread areas remain unknown. |
-| `NOT_UNIFORM` | At least two byte values were detected among the examined data. |
-| `NO_DATA` | No bytes were examined. |
+| `VERIFIED_FULL_SURFACE` | Completed full logical-surface read with a uniform byte pattern |
+| `SAMPLED_OR_PARTIAL_ONLY` | Examined data matches, but entire disk coverage is not established |
+| `NOT_UNIFORM` | Multiple byte values detected |
+| `NO_DATA` | No bytes examined |
 
-For example, a completed full-surface scan of a disk containing only `0x6C` would report:
+In October 2026, DriveBench successfully read all 18,351,959,040 host-addressable bytes of a Seagate ST318406LW and verified a uniform `0x6C` byte pattern.
+
+That result does not establish the origin of the pattern or certify sanitization.
+
+### TestDisk
+
+TestDisk examines partition structures and can search for lost partitions.
+
+A successful process exit code is not evidence that partitions were found or that a search completed.
+
+Current DriveBench TestDisk output handling has limitations. Detailed result interpretation and clearer completion reporting are planned improvements.
+
+Do not select TestDisk's partition-table **Write** function when investigating a disk that should remain unchanged.
+
+### PhotoRec
+
+PhotoRec can attempt file recovery without relying on a working partition table.
+
+Recovered files must be written to a separate physical disk.
+
+DriveBench should not be used to recover files back onto the source disk.
+
+Recovery may expose previously stored information. Handle recovered material only when authorized.
+
+### GNU ddrescue
+
+DriveBench can invoke ddrescue to create an image on a different physical disk.
+
+The destination must have sufficient available space.
+
+The saved image and recovery mapfile should be retained together when performing resumable imaging.
+
+These recovery workflows require additional real-hardware validation.
+
+### Persistent analysis history
+
+DriveBench saves analysis results under its persistent state location:
 
 ```text
-Uniform byte pattern: 0x6C - VERIFIED across the entire
-<actual byte count>-byte readable logical surface
+~/.local/state/drivebench/state.json
 ```
 
-In October 2026, the ST318406LW test drive completed a full read-only scan of 18,351,959,040 bytes and reported `0x6C` with `VERIFIED_FULL_SURFACE`. This verifies a uniform pattern in the host-readable logical area, **not** a particular origin or secure sanitization. A pattern could come from manufacturing diagnostics, later testing, or deliberate overwriting. **Uniform data alone cannot establish NOS/factory-new status, prior usage, secure sanitization, or the contents of reallocated/hidden physical sectors.** The existing signature-evidence assessment is separate from the uniform-byte result: `NO_RECOGNIZABLE_EVIDENCE_DETECTED` means only that this scanner found no recognized signatures.
+History can include:
 
-The **TestDisk** choice can list the current partition layout or run a scripted `analyze,search` to investigate older/deleted partition structure. DriveBench deliberately omits TestDisk's `write` commands and does not expose its interactive partition-repair interface in this submenu. This is meant for evidence gathering, not altering partition tables.
+- Drive identification
+- Operation type
+- Start and completion times
+- Status
+- Scan coverage
+- Signature observations
+- Uniform-byte verification results
 
-The **PhotoRec** option performs file carving and writes recovered files into a new output directory on **another physical disk**. A PhotoRec run may produce a very large number of files, some containing sensitive previous-owner data. Handle and dispose of recovered contents responsibly. The optional **GNU ddrescue** feature saves a raw image (`.img`) and resumable progress map (`.map`) on another disk. Neither feature writes to the original drive. DriveBench checks that the selected destination is an existing writable directory on a verifiable local block device, then checks its ancestry so it cannot be on the source disk. It deliberately rejects unverifiable destinations such as overlay, network, and tmpfs mounts; it is still your responsibility to ensure enough free space. External recovery tools run through `sudo` and the outputs may be root-owned.
+Interrupted and failed operations are not marked as successfully completed.
 
-**DriveBench records** the time, drive identity, scan progress, signature counts, offsets, status, and outcomes in `~/.local/state/drivebench/state.json`. It does *not* store recovered personal file content inside its persistent records. Full scans checkpoint progress approximately every 256 MiB; after power loss the scan remains `IN_PROGRESS`, never falsely marked completed. For disks with a trustworthy hardware identity, history follows that disk across reboots. With a manually labeled disk, you must explicitly reattach its record after restarting. On completely unidentified/unattached drives, an unlinked event is saved but is not associated with an arbitrary later `/dev/sdX`.
+## Drive identification (v0.4.1)
 
-Saved raw scan history is also included in a `DRIVEBENCH-REPORT.txt` subsequently generated on a DriveBench-formatted disk. Once a disk has been overwritten, those old file signatures may no longer be discoverable, making this pre-wipe capture valuable.
+Choose:
 
-Dependencies: `dd` from `coreutils` for raw reads, `testdisk` (also provides `photorec`), `gddrescue` (provides `ddrescue`), `sudo`, `lsblk`, and `findmnt`. Select **9. Check Ubuntu components** on the main menu for install commands. The raw-analysis tools themselves do not require additional Python packages; PDF generation separately requires ReportLab.
+**Select drive → 10. Identify drive**
 
-**Hardware validation and safety:** The v0.4.2 quick scan and full read-only raw scan were exercised on a Seagate ST318406LW connected to an Ubuntu SCSI test bench; the full scan read 17.09 GiB without reporting a read error. A later v0.4.3 scan also verified a uniform `0x6C` byte across the complete reported logical surface, with the result retained in saved history. The separate TestDisk/PhotoRec/ddrescue integration and destructive wipe/format functions have not been validated on actual drives. Always confirm the current model and serial before scanning. Avoid repeated scans of failing media; make an image first where appropriate. Never wipe or format before any desired recovery.
+DriveBench can attempt native serial detection using SMART and SCSI inquiry utilities.
 
-### Serial-number identification and persistence (new in v0.4.1)
+Hardware-reported serial numbers are distinguished from operator-supplied values.
 
-Choose **2. Select drive**, select the physical drive, then **10. Identify drive**:
+An operator may enter:
 
-1. Examine the drive-reported serial number and source, when available. DriveBench tries `lsblk`/udev first, followed by unprivileged `smartctl -i -j` and SCSI VPD inquiry for drives missing a reliable ID. When USB-to-IDE/SATA bridges hide a drive's native identity, the bridge's SCSI serial is deliberately *not* used for automatic history matching.
-2. Choose **2. Retry automatic serial detection with sudo**, if the normal user cannot read drive inquiry data. This is a read-only inquiry. Smartmontools (`smartctl`) and sg3-utils (`sg_inq`) are checked in the dependency menu.
-3. Choose **1. Enter / edit manual serial and asset ID** and confirm `SAVE`. Both values are saved separately from the hardware serial. Your values persist in `~/.local/state/drivebench/state.json` immediately, even if the application exits or the computer reboots. Do not use hardware serial fields to store guessed values.
-4. With a reliable hardware identifier, history automatically follows the same disk across reconnects and reboots. **Without** one, DriveBench creates a persistent *manual-only* record, but never assumes the disk occupying a particular `/dev/sdX`, USB slot, or SCSI target is the same disk. After a restart choose **10 → 3. Reattach a previously saved manual record**, compare the disk's physical label, and type the saved asset/serial and `LINK` to associate its saved history with that disk for **that session only**. Capacity/model must also match.
-5. Once manually attached, subsequent wipe, format, and report operations can be stored in that record, including interrupted or failed operations. Destructive commands also ask you to type the saved physical-label identifier. Reports include both serial sources and the asset ID with explicit provenance.
+- Manual serial number
+- Asset or inventory ID
 
-**Important limitation:** For anonymous disks, prior history can only be associated after a human validates the physical drive. An entered serial or matching slot is not proof. The tool cannot guarantee identity for physically identical media switched behind a bridge that does not support reliable device-generation tracking. Label such drives physically and confirm them before destructive actions.
+Manually supplied identifiers persist in history but do not constitute proof of hardware identity.
 
-DriveBench's status and configuration are saved separately from the program's installed source. Installing new versions should not overwrite the files under `~/.config/drivebench/` or `~/.local/state/drivebench/`. Back up those files periodically if the history matters.
+USB bridge serial numbers are not automatically assumed to belong to the actual disk.
 
-### Wiping, formatting, and writing a drive report (new in v0.4)
+Drives without trustworthy hardware identification require manual confirmation when reconnecting saved records after a restart.
 
-**Destructive warning:** Wiping and formatting permanently destroy existing user data, including unknown or unsupported partition layouts. Complete your file recovery, cloning, or imaging first. Test destructive operations with a sacrificial HDD before trusting them with valuable or vintage equipment. The destructive workflow has not yet been validated on real physical drives.
+## Wiping and formatting (v0.4.0)
 
-From **2. Select drive**, choose **9. Wipe / format / write drive report**. These are separate, explicitly selected operations:
+**WARNING: These operations destroy existing data.**
 
-1. **Wipe entire physical HDD:** choose `zero` or `random`, 1–10 passes, and optional post-wipe readback. `dd` writes every exposed logical block with progress and flushes data before each pass is recorded complete. Zero readback checks that every accessible byte reads as zero using `cmp`; random readback checks readability only, **not exact random content**. Wipe starts are logged *before* writing. Failed, interrupted, or incomplete wipes are **never** marked complete.
-2. **Partition and format:** choose FAT32 with **MBR** for older-system compatibility or exFAT with **GPT / Microsoft Basic Data** for modern Windows, macOS, and Linux. The menu suggests FAT32 for drives at or below 32 GiB (appropriate for many legacy SCSI disks), and exFAT for larger drives. FAT32 has a maximum file size just under 4 GiB; exFAT is not appropriate for many vintage systems. This action destroys the previous partition table even if the drive was not wiped first.
-3. **Write `DRIVEBENCH-REPORT.txt`:** requires a completed DriveBench formatting record and exactly one detected FAT32/exFAT partition. DriveBench temporarily mounts that partition **read-write**, writes a new text report using exclusive creation (will not replace an existing report), syncs it, and unmounts. The report contains identification, capacity, dates, partition details, saved processing events, method/pass count and outcome, verification status, and diagnostic data captured **before the wipe** (SMART data and SCSI LOG SENSE results where supported). Save data to your Ubuntu workstation's persistent history too. The report option will refuse to write to an arbitrary preexisting filesystem.
+Complete any necessary inspection, imaging, or authorized recovery before wiping or formatting.
 
-Before every destructive stage, DriveBench scans the system again and checks the exact device name, kernel disk sequence (where available), size, serial/identity, SCSI address, excluded drives/controllers, read-only flag, live mounts, active swap, and storage stack holders. The normal user launches the program, and individual utilities run under `sudo` only after confirmation. **Do not hot-swap SCSI devices**, and do not replace a USB-connected disk behind its adapter during an operation. Drives detected as nonrotational/SSD or NVMe are refused by the v0.4 overwrite/format workflow, because generic overwriting is not equivalent to flash sanitization. USB bridges can misreport drive type; manually verify physical hardware before proceeding.
+Choose:
 
-**Status persistence:** completed and incomplete processing operations are written to `~/.local/state/drivebench/state.json`. Drives with trustworthy serials/WWNs retain processing history across reboots. Operations on unidentifiable drives are logged as **unlinked events** and may be used for a report in the same running session, but they are **never automatically assigned to another disk** when a bridge or SCSI slot is reused. When available, Linux `diskseq` additionally detects reconnections during the running session. Prior status must not be treated as proof of sanitization for an unverified identity.
+**Select drive → 9. Wipe / format / write drive report**
 
-**Scope/assurance:** software overwrites cover normal addressable logical blocks, not necessarily reallocated physical sectors or hidden SSD flash. A completed overwrite is not an independent sanitization certificate. Verify the device's physical identity, and use an appropriate media-specific process for sensitive data.
+### Whole-disk overwrite
 
-### Mount one or more partitions
+DriveBench supports supervised zero or random overwrites with 1–10 passes.
 
-1. Start DriveBench and select **2. Select drive**.
-2. Pick a drive by its displayed number.
-3. Select **3. Mount a partition read-only**.
-4. Select a detected partition, verify its device and filesystem, and type `YES` to approve.
-5. DriveBench creates a new subdirectory under `/mnt/drivebench` and invokes `sudo mount` to attach it read-only.
-6. From a **second terminal**, use the path shown, for example: `ls -la /mnt/drivebench/DB-000001-sdc1-001/` and copy needed files to another drive. The destination must be writable and have available space; source data is mounted read-only.
-7. Repeat for other partitions. Each successful mount gets a new directory; already-mounted partitions cannot be mounted a second time from DriveBench.
-8. Select **3. List all mount points and mount status** to see active and earlier DriveBench mounts and externally mounted partitions.
-9. When finished copying, select **4. Unmount a DriveBench partition**; close any shells or programs using the partition first.
+Optional verification includes:
 
-**Read-only safety details:** read-only mounting does *not* provide forensic-grade hardware write protection. To avoid journal replay on potentially dirty filesystems, DriveBench uses `ro,noload` for ext3/ext4 and `ro,norecovery` for XFS. For FAT, exFAT, and NTFS variants it assigns read permissions to the invoking user when supported by the filesystem. For other recognized filesystems it attempts the default kernel read-only mount and may be unable to read certain ownership-restricted files. Mounting older or damaged filesystems can fail or expose kernel bugs. For irreplaceable media, make a full disk image with a separate tool before attempting to mount it. See the Linux `mount(8)` manual.
+- Full zero readback
+- Readability testing after random overwrites
 
-**Missing filesystem support:** If an NTFS filesystem cannot mount, Ubuntu may require `sudo apt install ntfs-3g`. Modern kernels typically support exFAT; `exfatprogs` contains utilities for exFAT maintenance/formatting, not a general solution for missing kernel support. Older Macintosh HFS/HFS+ volumes and uncommon vintage SCSI disk formats may need specialist tools and sometimes cannot be mounted by generic Linux `mount` at all. DriveBench explains when a filesystem is unknown rather than guessing a mount command.
+Random-data readability checking does not establish exact byte-for-byte verification of the random stream.
 
-### Inspect filesystem signatures (introduced in v0.3)
+Incomplete operations must not be reported as successful wipes.
 
-From the **Select drive** menu, choose **6. Inspect filesystem / partition signatures**. This read-only process consults `blkid -p` (uncached low-level signatures) and `wipefs --no-act` (prints signature locations, **does not erase** anything) on the whole disk and its partitions. It can prompt to run the specific probe using `sudo`, if ordinary user permissions do not permit reading raw block devices.
+### Partitioning and formatting
 
-**`"pttype": null` does not mean the disk is empty.** `PTTYPE` is the recognized *partition-table type* (`dos`, `gpt`, etc.), not the filesystem type. A null value means Linux has not identified a partition table using that lookup. A filesystem might be on the whole device (a "superfloppy" layout), the table may be corrupted, or the disk may use an unsupported vintage format. Even `blkid` and `wipefs` finding no signatures is **not** proof that valuable data is absent. If the disk might contain important files, image it before attempts at repair, formatting, or wiping. DriveBench does not automatically mount unknown filesystems.
+Supported options include:
 
-### Drive health and SCSI logs (introduced in v0.3)
+- FAT32 with MBR
+- exFAT with GPT
 
-Under **Select drive**, choose **7. Show SMART / SCSI drive-health details** to call `smartctl --all --json`, then display supported fields such as model, serial, power-on hours, SMART status, SCSI grown defects and read/write errors, ATA reallocations/pending sectors, and NVMe media errors. Some USB bridges need SAT translation (`-d sat`), selectable in the menu. Raw-device access may require `sudo`.
+Formatting is separate from wiping.
 
-Choose **8. Show detailed SCSI log pages** to run the read-only `sg_logs --all` report on older SCSI devices that expose additional LOG SENSE data. Attributes and vendor formats vary: **missing is not zero**, and even a passing SMART status does not prove media is error-free. For some SCSI disks, previously enabled GLTSD (Global Logging Target Save Disabled) can make saved power-on and error counters incomplete across power cycles; do not interpret low reported hours as proof of factory-new condition. Neither command starts a long/short drive self-test or performs a surface scan.
+Legacy compatibility varies by operating system and storage controller.
 
-### GitHub updates and branches (introduced in v0.3)
+### On-drive report
 
-Choose **10. Check GitHub branches / download update ZIP**. DriveBench queries GitHub's public branch list, displays the commit SHA for each branch, and offers a selected branch for download using **`wget`**. The ZIP is pinned to the exact commit, not an asynchronously moving branch head. The staged archive is under `/tmp/drivebench-updates/`; `/tmp` may be cleared after reboot.
+DriveBench can write `DRIVEBENCH-REPORT.txt` to an appropriate formatted partition.
 
-When running from a real Git checkout, DriveBench compares local `HEAD` with the chosen remote SHA. For installs copied from a ZIP or uploaded manually, it explains that the local commit is unknown instead of claiming the system is current. A staged archive is compared against local installed files, listing **added**, **modified**, and **unchanged** files; the app never automatically replaces or deletes project files. Repeated downloads of the same branch commit reuse the staged ZIP if present.
+This differs from printable PDFs, which are stored on the Ubuntu workstation and do not modify the tested disk.
 
-For a cloned repository, the recommended manual upgrade, after reviewing local changes, is:
+### Destructive-operation safeguards
+
+DriveBench performs checks involving:
+
+- System-disk protection
+- Device identity
+- Device size and model
+- Disk sequence information when available
+- Mounted filesystems
+- Storage dependencies
+- Configured exclusions
+- Read-only device status
+- Unsupported solid-state targets
+
+Do not hot-swap SCSI devices.
+
+**Destructive wipe and format workflows still require validation on a sacrificial physical HDD before routine use.**
+
+Software overwriting does not guarantee sanitization of inaccessible or reallocated physical sectors.
+
+## Read-only partition mounting
+
+Choose:
+
+**Select drive → 3. Mount a partition read-only**
+
+DriveBench creates managed mount directories under:
+
+```text
+/mnt/drivebench/
+```
+
+Example:
+
+```text
+/mnt/drivebench/DB-000001-sdc1-001/
+```
+
+DriveBench tracks managed mount history and checks active kernel mount information.
+
+Read-only software mounting is not a substitute for hardware write blocking when forensic integrity is required.
+
+Unsupported or damaged filesystems may need specialist tools.
+
+Older Macintosh formats and unusual vintage SCSI layouts may not be supported by standard Linux filesystem drivers.
+
+## Filesystem signatures
+
+DriveBench uses read-only commands such as:
+
+```bash
+blkid -p
+wipefs --no-act
+```
+
+A missing partition table or unknown filesystem does not prove the disk is blank.
+
+Unknown filesystem layouts can contain data that the installed Linux tools do not recognize.
+
+## SMART and SCSI health information
+
+Choose:
+
+- **7. Show SMART / SCSI drive-health details**
+- **8. Show detailed SCSI log pages**
+
+Depending on device support, results may include:
+
+- Model and serial
+- Device-reported health status
+- Power-on counters
+- Start/stop counts
+- Corrected and uncorrected errors
+- Read/write error information
+- SCSI grown defect counts
+
+Missing information is not automatically interpreted as zero.
+
+On some older SCSI drives, GLTSD settings can prevent historical counters from being preserved across power cycles.
+
+Very low reported power-on hours do not prove factory-new condition.
+
+SMART health checks do not replace surface testing.
+
+## GitHub update checking
+
+Choose:
+
+**Main menu → 10. Check GitHub for branch updates / download ZIP**
+
+DriveBench can discover available branches, display commit identifiers, download an archive, and compare files.
+
+It does not install downloaded updates automatically.
+
+For a Git checkout:
 
 ```bash
 git status
 git fetch origin
-git switch main  # or choose a different existing branch
+git switch main
 git pull --ff-only origin main
 ```
 
-For a newly created remote branch, use `git switch --track origin/BRANCH` after fetching. With a ZIP/manual installation, inspect the staged ZIP, back up the app directory, and manually copy the new source files. Do not copy the top-level archive directory blindly onto your working directory. **The persistent config and history are outside the repository** (`~/.config/drivebench/` and `~/.local/state/drivebench/`) and must be retained. Never update a running process in place without restarting it afterwards.
+To test an unmerged feature branch, check out that branch separately.
 
-The network updater requires a public GitHub repository and internet access. API/network errors are reported. If `wget` is absent, the program displays `sudo apt install wget`. It does not download or execute code silently.
+Persistent drive history and configuration are stored outside the source directory.
 
-### SCSI ID conflict troubleshooting (observed hardware issue)
+## SCSI ID troubleshooting
 
-On one Ubuntu test bench, a **Seagate ST318406LW** appeared around 15 times in the drive list, once at almost every SCSI target ID. `lsblk -d -o NAME,HCTL,SIZE,MODEL` showed the same 18 GB drive model at HCTL addresses `2:0:1:0` through `2:0:15:0`. It was an apparent **SCSI target-ID conflict** rather than a DriveBench display bug. After powering down and changing the drive's SCSI ID jumper, enumeration returned to normal.
+During hardware development, a Seagate ST318406LW appeared at multiple SCSI target IDs because of a hardware configuration conflict.
 
-An ID conflict between the drive and host adapter can cause this pattern. Most legacy SCSI controllers default to ID 7, but check the actual adapter configuration; never assume its ID. Before moving jumpers or cables, **power off completely**. Confirm every physical drive has a unique target ID and check termination/cabling if the problem persists. DriveBench now flags unusually repeated model/size combinations across 8+ target IDs as a **possible** conflict, not proof: genuinely identical physical drives can share a model and capacity.
+Correcting the SCSI ID jumper after powering down resolved the issue.
 
-Useful read-only troubleshooting command:
+Useful command:
 
 ```bash
 lsblk -d -o NAME,HCTL,SIZE,MODEL
 ```
 
-### Permissions and directories
+When troubleshooting SCSI:
 
-- Mount directory: **`/mnt/drivebench/`**, created as a root-owned directory not writable by other users. Each generated mount point is root-owned and named after the drive record ID and partition device name, with a numeric suffix.
-- These directories are on your **Ubuntu test computer's existing filesystem**. The read-only mounting workflow does not create partitions; the separate explicitly destructive formatting menu does.
-- Directory permissions are 0755. Some Linux/native UNIX partitions have restrictive permissions inside, so a normal user may still be unable to read certain files; DriveBench does not bypass filesystem permissions.
-- Unmount uses `sudo umount` and removes the empty mount directory on success. Previously recorded mount events remain in history.
-- DriveBench only offers unmount for mounts it registered and can still match against the live mount ID, partition major/minor, and system boot ID. After a power cycle, previous mounts are shown as not mounted; the tool will not try to unmount an old, stale entry.
-- If power fails mid-mount before the state file is saved, the mount may exist without a managed record. Inspect the OS mount table and unmount such entries manually; DriveBench does not assume ownership of arbitrary existing mounts.
+- Shut down before changing cables, jumpers, or drives.
+- Ensure devices have unique bus IDs.
+- Verify controller settings.
+- Check termination and cabling.
+- Do not assume duplicate models alone prove a conflict.
 
-## First run and persistent drive status
+## Configuration and persistent state
 
-The program automatically creates:
+Default locations:
 
 ```text
 ~/.config/drivebench/config.json
 ~/.local/state/drivebench/state.json
 ```
 
-These files persist across program exits, reboots and power cycling. They use the XDG config/state locations if configured in the environment and are created with restrictive permissions. The first time you run DriveBench, it lists disks, explains automatic system drive protection, and offers to configure disk/controller exclusions; later use menu **7** to edit the exclusions.
+These files survive ordinary application upgrades and reboots.
 
-Disk history uses durable drive identities when available, never transient `/dev/sdX`. A drive may show `DISCOVERED`, `WIPED`, `WIPED_AND_FORMATTED`, `PREPARED`, `FORMATTED_NOT_WIPED`, `PROCESSING_INCOMPLETE`, `MANUAL_WIPE_REPORTED`, or `UNVERIFIED` depending on saved evidence and identity confidence. Marking an externally performed wipe requires choosing the per-drive history menu and explicitly confirming the report; that never claims DriveBench performed or verified the wipe. Reconnecting a disk can increase its seen count but never changes its processing state by itself.
+DriveBench can record statuses such as:
 
-**USB bridge caveat:** Some USB-to-IDE/SATA adapters report their *adapter's* serial number, not the drive's. DriveBench does not trust generic USB bridge serial numbers for history matching. Unidentified drives won't automatically inherit a past wipe status. For unidentified drives, use the manual identification and explicit record reattachment workflow under **Select drive → 10. Identify drive**, and verify the physical label after each restart. Exclusions can follow a disk's trustworthy hardware identity or the *physical port/slot* where an exclusion is appropriate. Slot exclusions also affect future drives inserted there.
+- `DISCOVERED`
+- `UNVERIFIED`
+- `PROCESSING_INCOMPLETE`
+- `WIPED`
+- `FORMATTED_NOT_WIPED`
+- `WIPED_AND_FORMATTED`
+- `PREPARED`
+- `MANUAL_WIPE_REPORTED`
 
-**USB refresh:** menu **5** settles outstanding udev events and refreshes discovery. It does not forcibly reset USB hardware. If you swap an IDE/SATA drive behind an unchanged USB adapter, disconnect and reconnect the adapter safely to trigger kernel re-enumeration. For SCSI disks, the workflow assumes powering off before replacing the drive.
+A manually reported external wipe is not represented as a verified DriveBench operation.
 
-## Test without hardware
+## Testing
 
-From the project directory:
+Run all automated tests:
+
+```bash
+bash run-tests.sh
+```
+
+Or:
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-Automated tests use mocks and do not touch block devices. PDF-report tests cover safe filenames, PDF creation/regeneration, print submission without shell execution, and menu integration; they do not establish that an actual Ubuntu printer is configured or functioning. v0.4.3 regression coverage includes full vs. sampled uniform-byte verification, nonuniform data, `0x00`/`0xFF`/`0x6C` patterns, and persistent history. Run `bash run-tests.sh` on a fresh checkout (or the Python command above) and confirm the complete suite passes before using the new scanner on physical media. v0.4.2 adds raw analysis and destination-safety tests. v0.4.1 added coverage for automatic SCSI/SMART serial discovery, USB bridge rejection, user-supplied serial and asset persistence, manual-only reboot association, and interrupted-operation history. They cover identity/history, protected disks, mounts, SCSI duplicate-ID patterns, SMART summaries, GitHub branch staging, destructive preflight, confirmation cancellation, wipe progress and unsuccessful wipes. **The v0.4 destructive workflows have NOT been tested on a real disk.** Start with a clearly identified sacrificial conventional HDD; confirm safeguards and verify the resulting layout and report before processing anything valuable.
+Run just the bag-label tests:
 
-## For future development
+```bash
+python3 -m unittest discover -s tests -p 'test_labels.py' -v
+```
 
-Planned: Smart File Discovery & Recovery for mounted filesystems, advanced disk-image verification, dedicated full-surface write/read testing, additional vintage filesystem layouts, configurable paper/antistatic-bag labels, and proper SSD-native sanitization. The current wipe, format, and report features are explicit, supervised operations and should be validated against real hardware before regular use.
+The v0.4.5 label tests are intended to cover:
+
+- All three supported PDF page sizes
+- Full serial number preservation
+- Hardware versus operator-supplied identifiers
+- Completed and incomplete scan summaries
+- Uniform-byte verification safeguards
+- Deterministic filenames
+- Regeneration confirmation
+- Generation from saved history
+- CLI menu integration
+- Persistent selected-drive navigation and version headings
+- Device-path, hardware-identity, and record-change rejection
+- No automatic printer submission
+
+Tests use simulated drive records rather than destructive operations on physical hardware.
+
+The expanded test suite must pass before v0.4.5 is merged.
+
+The 3 × 1-inch layout also requires a successful physical print before its printer compatibility can be considered validated.
+
+## Planned development
+
+### v0.4.6: Organized reports and marketplace images
+
+Planned improvements:
+
+- Create a dedicated output folder for each drive.
+- Use the persistent DriveBench record ID as the primary folder identifier.
+- Standardize a shared sortable filename prefix across all drive artifacts.
+- Keep reports, labels, images, and future diagnostics together.
+- Render the detailed drive-report PDF into a matching high-resolution PNG.
+- Allow marketplace images to be used in eBay and Facebook Marketplace listings.
+- Preserve the same verified test information across PDF and image exports.
+- Avoid automatically deleting or relocating existing legacy reports.
+
+Proposed folder structure:
+
+```text
+~/DriveBench-Reports/
+  DB-000003-SEAGATE-ST318406LW/
+    DB-000003-SEAGATE-ST318406LW-report.pdf
+    DB-000003-SEAGATE-ST318406LW-report.png
+    DB-000003-SEAGATE-ST318406LW-label-3x1.pdf
+    DB-000003-SEAGATE-ST318406LW-label-2p25x4.pdf
+    DB-000003-SEAGATE-ST318406LW-label-4x6.pdf
+```
+
+The final filename convention should incorporate the hardware serial when available, while keeping a stable DriveBench record ID as the primary identifier.
+
+### Additional planned improvements
+
+- Native ZPL printing for compatible Zebra printers.
+- Improved TestDisk result interpretation and search completion reporting.
+- Clearer PhotoRec source and destination verification.
+- Free-space checks before recovery.
+- Smart File Discovery and Recovery from mounted filesystems.
+- Configurable discovery profiles for documents, images, videos, and backups.
+- Selective verified file copying to separate storage.
+- Per-region surface maps showing zero-filled and nonzero data.
+- Better persistent SMART history.
+- Persist wipe verification details (method, passes, timing, and readback outcome) in saved logs and seller-facing reports, clearly separated from post-wipe surface scans and not described as certified sanitization.
+- Dedicated write/read surface stress testing.
+- Additional vintage filesystems.
+- Macintosh SE disk cloning and preservation.
+- Batch report and label generation.
+- Additional disk-image verification.
+- Appropriate SSD-specific sanitization methods.
+
+DriveBench development is guided by practical work processing real storage inventory: identify the disk, inspect its condition, preserve authorized data where appropriate, evaluate the media, document the results, and prepare the drive for resale or reuse.

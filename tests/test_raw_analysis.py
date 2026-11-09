@@ -1,8 +1,11 @@
+
 """Mocked raw-media tests: never read from or write to real disk devices."""
 import os
+import io
 import tempfile
 import unittest
 from pathlib import Path
+from contextlib import redirect_stdout
 from unittest.mock import patch
 from drivebench import raw_analysis as raw, store, processing, cli
 
@@ -173,7 +176,6 @@ class PersistentAnalysisTests(unittest.TestCase):
         self.assertEqual(ref['record_id'], rid)
         self.assertEqual(store.read_state()['records'][rid]['raw_analysis'][0]['status'], 'IN_PROGRESS')
 
-
     def test_full_scan_uniform_pattern_saved_in_history(self):
         disk = sample_disk(size=2048)
         store.remember_disks([disk])
@@ -219,10 +221,36 @@ def fake_os_stat(path, *args, **kwargs):
 class SafetyTests(unittest.TestCase):
     def test_disk_menu_can_reach_raw_analysis(self):
         d = sample_disk(reasons=[], record_id='DB-1', status='DISCOVERED')
-        with patch.object(cli, '_ask', return_value='11'), \
+        # The selected-drive menu stays open after the analysis submenu.
+        # Exit explicitly on 0 and avoid querying real hardware.
+        with patch.object(cli, '_ask', side_effect=['11', '0']), \
+             patch.object(cli, '_refresh_selected_disk', return_value=d) as refresh, \
              patch.object(cli, '_raw_analysis_menu') as menu:
             cli._disk_menu(d)
+        refresh.assert_called_once_with(d)
         menu.assert_called_once_with(d)
+
+    def test_can_open_raw_analysis_twice_without_reselecting_drive(self):
+        d = sample_disk(reasons=[], record_id='DB-1', status='DISCOVERED')
+        with patch.object(cli, '_ask', side_effect=['11', '11', '0']), \
+             patch.object(cli, '_refresh_selected_disk', return_value=d) as refresh, \
+             patch.object(cli, '_raw_analysis_menu') as menu:
+            cli._disk_menu(d)
+        self.assertEqual(refresh.call_count, 2)
+        self.assertEqual(menu.call_count, 2)
+        for call in menu.call_args_list:
+            self.assertEqual(call.args[0], d)
+
+    def test_drive_change_stops_raw_analysis_before_it_starts(self):
+        d = sample_disk(reasons=[], record_id='DB-1', status='DISCOVERED')
+        with patch.object(cli, '_ask', return_value='11'), \
+             patch.object(cli, '_refresh_selected_disk',
+                          side_effect=cli.UserError('Selected drive changed')), \
+             patch.object(cli, '_raw_analysis_menu') as menu, \
+             redirect_stdout(io.StringIO()) as output:
+            cli._disk_menu(d)
+        menu.assert_not_called()
+        self.assertIn('SELECTION INVALIDATED', output.getvalue())
 
     def test_protected_system_drive_refused(self):
         d = sample_disk(system_reasons=['root filesystem'])
