@@ -1,5 +1,5 @@
 
-"""Read-only simulated sysfs tests: never access or change real drives."""
+"""Read-only sysfs simulations, including actual lsblk --paths naming."""
 from __future__ import annotations
 
 import tempfile
@@ -24,9 +24,9 @@ class StorageClaimsTests(unittest.TestCase):
             'path': '/dev/sdz', 'kname': 'sdz', 'majmin': '8:240',
             'diskseq': '12',
             'tree': {
-                'type': 'disk', 'path': '/dev/sdz', 'kname': 'sdz',
+                'type': 'disk', 'path': '/dev/sdz', 'kname': '/dev/sdz',
                 'maj:min': '8:240', 'children': [
-                    {'type': 'part', 'path': '/dev/sdz1', 'kname': 'sdz1',
+                    {'type': 'part', 'path': '/dev/sdz1', 'kname': '/dev/sdz1',
                      'maj:min': '8:241'},
                 ],
             },
@@ -54,6 +54,50 @@ class StorageClaimsTests(unittest.TestCase):
         self.assertFalse(result['blocked'])
         self.assertEqual([], result['holders'])
         self.assertIn('does NOT reserve or authorize', storage_claims.describe_claims(result))
+
+    def test_lsblk_paths_names_match_selected_disk(self):
+        """The real lsblk --paths tree uses /dev-prefixed KNAME fields."""
+        self.assertEqual('sdz', self.disk['kname'])
+        self.assertEqual('/dev/sdz', self.disk['tree']['kname'])
+        self.assertEqual('/dev/sdz1', self.disk['tree']['children'][0]['kname'])
+        result = self.inspect()
+        self.assertFalse(result['blocked'], result['errors'])
+        self.assertEqual([], result['errors'])
+
+    def test_bare_kernel_names_remain_supported(self):
+        self.disk['tree']['kname'] = 'sdz'
+        self.disk['tree']['children'][0]['kname'] = 'sdz1'
+        result = self.inspect()
+        self.assertFalse(result['blocked'], result['errors'])
+
+    def test_mixed_bare_and_prefixed_names_remain_supported(self):
+        self.disk['tree']['children'][0]['kname'] = 'sdz1'
+        result = self.inspect()
+        self.assertFalse(result['blocked'], result['errors'])
+
+    def test_different_top_level_tree_kname_fails_closed(self):
+        self.disk['tree']['kname'] = '/dev/sdy'
+        result = self.inspect()
+        self.assertTrue(result['blocked'])
+        self.assertTrue(any('tree does not match' in error for error in result['errors']))
+
+    def test_different_top_level_tree_path_fails_closed(self):
+        self.disk['tree']['path'] = '/dev/sdy'
+        result = self.inspect()
+        self.assertTrue(result['blocked'])
+        self.assertTrue(any('tree does not match' in error for error in result['errors']))
+
+    def test_partition_name_must_agree_with_its_path(self):
+        self.disk['tree']['children'][0]['kname'] = '/dev/sdy1'
+        result = self.inspect()
+        self.assertTrue(result['blocked'])
+        self.assertTrue(any('invalid block-device entry' in error for error in result['errors']))
+
+    def test_partition_kernel_name_rejects_nested_path(self):
+        self.disk['tree']['children'][0]['kname'] = '/dev/disk/by-id/alias'
+        result = self.inspect()
+        self.assertTrue(result['blocked'])
+        self.assertTrue(any('invalid block-device entry' in error for error in result['errors']))
 
     def test_multipath_holder_detected_on_disk(self):
         dm = self.node('dm-0', '253:0')
