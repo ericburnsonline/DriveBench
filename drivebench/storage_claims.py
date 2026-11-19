@@ -23,6 +23,20 @@ def _valid_name(name: str) -> bool:
     return bool(_BLOCK_NAME.fullmatch(name) and name not in ('.', '..'))
 
 
+def _kernel_name(value: object) -> str | None:
+    """Normalize lsblk KNAME, which --paths emits as /dev/sdX.
+
+    Accept exactly a bare kernel basename or its /dev/ equivalent. Reject
+    traversal, unrelated paths, and extra path components rather than using a
+    general basename conversion that could conceal an invalid inventory node.
+    """
+    raw = str(value or '')
+    name = raw[5:] if raw.startswith('/dev/') else raw
+    if not _valid_name(name) or raw not in (name, f'/dev/{name}'):
+        return None
+    return name
+
+
 def _read(path: Path) -> str:
     try:
         return path.read_text(encoding='utf-8', errors='replace').strip()
@@ -62,7 +76,7 @@ def inspect_claims(
         result['errors'].append('Selected disk lacks a valid /dev/<kernel-name> identity.')
         return result
     tree = disk.get('tree')
-    if not isinstance(tree, dict) or str(tree.get('kname')) != kname:
+    if not isinstance(tree, dict) or _kernel_name(tree.get('kname')) != kname or str(tree.get('path')) != device:
         result['errors'].append('Selected disk tree does not match its kernel device name.')
         return result
 
@@ -72,8 +86,8 @@ def inspect_claims(
     for node in inventory.flatten(tree):
         if node.get('type') not in ('disk', 'part'):
             continue
-        name = str(node.get('kname') or '')
-        if not _valid_name(name) or str(node.get('path')) != f'/dev/{name}':
+        name = _kernel_name(node.get('kname'))
+        if name is None or str(node.get('path')) != f'/dev/{name}':
             result['errors'].append('Disk tree has an invalid block-device entry.')
             continue
         selected[name] = str(node.get('maj:min') or '')
