@@ -23,6 +23,7 @@ class PreflightSafetyTests(unittest.TestCase):
              patch.object(processing.store, 'read_config', return_value={'ignored_drives': [], 'ignored_slots': [], 'ignored_controllers': []}), \
              patch.object(processing, '_majmin', return_value='8:240'), \
              patch.object(processing, '_swap_and_holders', return_value=[]), \
+             patch.object(processing.storage_claims, 'inspect_claims', return_value={'device': disk['path'], 'holders': [], 'mounts': [], 'swaps': [], 'errors': [], 'blocked': False}), \
              patch.object(processing.mounts, 'live_mounts', return_value=[]):
             return processing.preflight(disk)
 
@@ -40,6 +41,33 @@ class PreflightSafetyTests(unittest.TestCase):
                                   'mountpoints': ['/data'], 'ro': 0, 'kname': 'sdz1'}]
         with self.assertRaisesRegex(processing.ProcessingError, 'mounted'):
             self.check(d)
+
+    def test_multipath_holder_preflight_refuses_with_mapping_name(self):
+        disk = fake_disk()
+        report = {'device': '/dev/sdz', 'blocked': True,
+                  'holders': [{'source': '/dev/sdz', 'device': '/dev/dm-0',
+                               'kind': 'multipath', 'mapping_name': 'mpatha',
+                               'mapping_uuid': 'mpath-WD', 'slaves': ['/dev/sdz']}],
+                  'mounts': [], 'swaps': [], 'errors': []}
+        with patch.object(processing.inventory, 'discover', return_value={'disks': [disk], 'warnings': []}), \
+             patch.object(processing.store, 'read_config', return_value={}), \
+             patch.object(processing, '_swap_and_holders', return_value=[]), \
+             patch.object(processing, '_majmin', return_value='8:240'), \
+             patch.object(processing.mounts, 'live_mounts', return_value=[]), \
+             patch.object(processing.storage_claims, 'inspect_claims', return_value=report):
+            with self.assertRaisesRegex(processing.ProcessingError, 'mpatha'):
+                processing.preflight(disk)
+
+    def test_failed_claim_inspection_cannot_authorize_wiping(self):
+        disk = fake_disk()
+        with patch.object(processing.inventory, 'discover', return_value={'disks': [disk], 'warnings': []}), \
+             patch.object(processing.store, 'read_config', return_value={}), \
+             patch.object(processing, '_swap_and_holders', return_value=[]), \
+             patch.object(processing, '_majmin', return_value='8:240'), \
+             patch.object(processing.mounts, 'live_mounts', return_value=[]), \
+             patch.object(processing.storage_claims, 'inspect_claims', side_effect=OSError('sysfs unavailable')):
+            with self.assertRaisesRegex(processing.ProcessingError, 'sysfs unavailable'):
+                processing.preflight(disk)
 
     def test_valid_disk_check(self):
         self.assertEqual('/dev/sdz', self.check(fake_disk())['path'])
@@ -96,6 +124,55 @@ class ProcessingTests(unittest.TestCase):
                 processing.wipe(d, 'zero', 1, False)
             self.assertFalse(finish.call_args.kwargs['success'])
 
+    def test_udev_settle_failure_fails_closed(self):
+        import subprocess
+        with patch.object(processing.shutil, 'which', return_value='/usr/bin/udevadm'), \
+             patch.object(processing.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)):
+            with self.assertRaisesRegex(processing.ProcessingError, 'udevadm settle failed'):
+                processing._settle_storage_events('after overwrite')
+
+    def test_holder_claim_after_overwrite_stops_before_readback(self):
+        d = fake_disk()
+        check_count = 0
+        def staged_preflight(original):
+            nonlocal check_count
+            check_count += 1
+            # Initial, confirmed and pre-pass checks pass; post-pass fails.
+            if check_count == 4:
+                raise processing.ProcessingError('HOLDER: /dev/sdz -> /dev/dm-0 (mpatha)')
+            return d
+        with patch.object(processing, 'preflight', side_effect=staged_preflight), \
+             patch.object(processing, '_settle_storage_events'), \
+             patch.object(processing, 'confirm_action', return_value=True), \
+             patch.object(processing, '_capture_diagnostics', return_value={}), \
+             patch.object(processing.store, 'start_processing', return_value={'event_id': 'OP-X'}), \
+             patch.object(processing.store, 'update_processing') as update, \
+             patch.object(processing.store, 'finish_processing') as finish, \
+             patch.object(processing, 'run_privileged') as run:
+            with self.assertRaisesRegex(processing.ProcessingError, 'mpatha'):
+                processing.wipe(d, 'zero', 1, True)
+            self.assertEqual(1, run.call_count)  # dd completed; cmp never started
+            self.assertEqual(1, update.call_args.args[1]['passes_completed'])
+            self.assertFalse(finish.call_args.kwargs['success'])
+            self.assertEqual('after overwrite pass 1', finish.call_args.kwargs['fields']['failure_stage'])
+            self.assertEqual('NOT COMPLETED', finish.call_args.kwargs['fields']['verification'])
+
+    def test_post_overwrite_check_runs_even_without_verification(self):
+        d = fake_disk()
+        with patch.object(processing, 'preflight', side_effect=[d, d, d, processing.ProcessingError('mount appeared')]), \
+             patch.object(processing, '_settle_storage_events'), \
+             patch.object(processing, 'confirm_action', return_value=True), \
+             patch.object(processing, '_capture_diagnostics', return_value={}), \
+             patch.object(processing.store, 'start_processing', return_value={'event_id': 'OP-X'}), \
+             patch.object(processing.store, 'update_processing'), \
+             patch.object(processing.store, 'finish_processing') as finish, \
+             patch.object(processing, 'run_privileged') as run:
+            with self.assertRaisesRegex(processing.ProcessingError, 'mount appeared'):
+                processing.wipe(d, 'zero', 1, False)
+            self.assertEqual(1, run.call_count)
+            self.assertFalse(finish.call_args.kwargs['success'])
+            self.assertEqual('NOT REQUESTED', finish.call_args.kwargs['fields']['verification'])
+
     def test_format_refuses_when_cancelled(self):
         d = fake_disk()
         with patch.object(processing, 'preflight', return_value=d), \
@@ -117,11 +194,38 @@ class ProcessingTests(unittest.TestCase):
              patch.object(processing, '_majmin', return_value='8:241'), \
              patch.object(processing.store, 'start_processing', return_value={'event_id': 'OP-X'}), \
              patch.object(processing.store, 'finish_processing') as finish, \
+             patch.object(processing, '_settle_storage_events'), \
              patch.object(processing, 'run_privileged') as run:
             processing.format_drive(d, 'exfat')
         self.assertIn('msftdata', run.call_args_list[0].args[0])
         self.assertEqual('mkfs.exfat', run.call_args_list[-1].args[0][0])
         self.assertTrue(finish.call_args.kwargs['success'])
+
+    def test_format_claim_after_filesystem_marks_incomplete(self):
+        d = fake_disk()
+        part = {'path': '/dev/sdz1', 'type': 'part', 'fstype': 'exfat'}
+        after = fake_disk(partitions=[part])
+        preflight_calls = 0
+        def staged_check(disk):
+            nonlocal preflight_calls
+            preflight_calls += 1
+            if preflight_calls == 4:
+                raise processing.ProcessingError('MOUNTED: /dev/sdz1 at /media/user/DRIVEBENCH')
+            return disk
+        with patch.object(processing, 'preflight', side_effect=staged_check), \
+             patch.object(processing, '_settle_storage_events'), \
+             patch.object(processing.shutil, 'which', return_value='/usr/bin/tool'), \
+             patch.object(processing, 'confirm_action', return_value=True), \
+             patch.object(processing.inventory, 'discover', return_value={'disks': [after]}), \
+             patch.object(processing, '_majmin', return_value='8:241'), \
+             patch.object(processing.store, 'start_processing', return_value={'event_id': 'OP-X'}), \
+             patch.object(processing.store, 'finish_processing') as finish, \
+             patch.object(processing, 'run_privileged') as run:
+            with self.assertRaisesRegex(processing.ProcessingError, 'MOUNTED'):
+                processing.format_drive(d, 'exfat')
+            self.assertEqual('mkfs.exfat', run.call_args.args[0][0])
+            self.assertFalse(finish.call_args.kwargs['success'])
+            self.assertEqual('after filesystem creation', finish.call_args.kwargs['fields']['failure_stage'])
 
     def test_write_report_rejects_unverified_preexisting_partition(self):
         d = fake_disk(partitions=[{'path': '/dev/sdz1', 'type': 'part', 'fstype': 'vfat',
