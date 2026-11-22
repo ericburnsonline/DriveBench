@@ -1,3 +1,4 @@
+
 """Private, atomically-written configuration and persistent drive history."""
 from __future__ import annotations
 
@@ -58,7 +59,6 @@ def _atomic_write(path: Path, value: dict) -> None:
             fp.flush()
             os.fsync(fp.fileno())
         os.replace(tmp, path)
-        # Make the rename durable on filesystems supporting directory fsync.
         try:
             dfd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
             try:
@@ -85,7 +85,6 @@ def edit_json(path: Path, fallback: dict):
             _atomic_write(path, value)
             fcntl.flock(fp.fileno(), fcntl.LOCK_UN)
     except BaseException:
-        # with os.fdopen closes the fd if opened; callers receive the error.
         raise
 
 
@@ -117,10 +116,7 @@ def _summary(disk: dict) -> dict:
 
 
 def remember_disks(disks: list[dict]) -> dict[str, dict]:
-    """Create/update records only for drives with unambiguous hardware identity.
-
-    Merely finding a disk does NOT upgrade its tested/wiped status.
-    """
+    """Create/update records only for drives with unambiguous hardware identity."""
     found: dict[str, dict] = {}
     with edit_json(paths()[1], default_state()) as state:
         records = state.setdefault("records", {})
@@ -162,10 +158,7 @@ def _new_record(state: dict, disk: dict, *, manual: bool) -> dict:
 
 def save_identification(disk: dict, *, record_id: str | None,
                         manual_serial: str | None, asset_id: str | None) -> str:
-    """Atomically save operator labels independently of verified device serials.
-
-    Anonymous records are NEVER eligible for automatic post-reboot matching.
-    """
+    """Atomically save operator labels independently of verified device serials."""
     import re
     manual_serial = (manual_serial or '').strip() or None
     asset_id = (asset_id or '').strip() or None
@@ -375,10 +368,7 @@ def finish_processing(op: dict, *, success: bool, fields: dict | None = None) ->
 
 
 def start_analysis(disk: dict, kind: str, fields: dict | None = None) -> dict:
-    """Durably begin an evidence scan or recovery before opening raw media.
-
-    Anonymous disks do not get matched to prior events merely by path/slot.
-    """
+    """Durably begin an evidence scan or recovery before opening raw media."""
     import uuid
     event = {'event_id': 'SCAN-' + uuid.uuid4().hex,
              'kind': kind, 'started_at': timestamp(),
@@ -430,3 +420,57 @@ def update_analysis(ref: dict, fields: dict) -> None:
         if entry['status'] != 'IN_PROGRESS':
             raise ValueError('Analysis already finished')
         entry.setdefault('progress', {}).update(fields)
+
+
+def record_smart_snapshot(disk: dict, snapshot: dict) -> str:
+    """Persist timestamped read-only SMART evidence under the correct record.
+
+    Anonymous drives require explicit manual attachment in this session.
+    Device path or USB port alone never establishes historical identity.
+    """
+    import uuid
+
+    if not isinstance(snapshot, dict) or snapshot.get('schema_version') != 1:
+        raise ValueError('Unsupported SMART snapshot format')
+    if snapshot.get('device_at_collection') != disk.get('path'):
+        raise ValueError('SMART snapshot device path differs from selected drive')
+    if snapshot.get('capacity_bytes') != disk.get('size'):
+        raise ValueError('SMART snapshot capacity differs from selected drive')
+    if snapshot.get('drive_identity') != disk.get('identity'):
+        raise ValueError('SMART snapshot hardware identity differs from selected drive')
+    if snapshot.get('collection_status') not in ('COLLECTED', 'PARTIAL', 'UNAVAILABLE'):
+        raise ValueError('Invalid SMART collection status')
+
+    event = dict(snapshot)
+    event['event_id'] = 'SMART-' + uuid.uuid4().hex
+    event['recorded_at'] = timestamp()
+    event['source'] = 'read_only_smartctl_collection'
+
+    with edit_json(paths()[1], default_state()) as state:
+        records = state.setdefault('records', {})
+        record = None
+        if disk.get('identity'):
+            record = next((r for r in records.values()
+                           if r.get('identity') == disk['identity']), None)
+        elif disk.get('operator_bound_session') and disk.get('manual_record_id'):
+            candidate = records.get(disk['manual_record_id'])
+            if (candidate and not candidate.get('identity') and
+                    candidate.get('identity_method') == 'manual_confirmation_required' and
+                    (candidate.get('last_device') or {}).get('model') == disk.get('model') and
+                    (candidate.get('last_device') or {}).get('size') == disk.get('size')):
+                record = candidate
+                event['identity_assurance'] = 'operator_confirmed_for_this_session_only'
+        if not record:
+            raise ValueError('No verified or explicitly session-linked drive record; identify drive first')
+        if record.get('identity') and record['identity'] != disk.get('identity'):
+            raise ValueError('Drive identity changed before SMART snapshot was saved')
+        record.setdefault('smart_history', []).append(event)
+        return event['event_id']
+
+
+def smart_history(record_id: str) -> list[dict]:
+    """Read saved SMART snapshots; no live device access."""
+    record = read_state().get('records', {}).get(record_id)
+    if not record:
+        raise ValueError(f'Unknown record: {record_id}')
+    return list(record.get('smart_history', []))
