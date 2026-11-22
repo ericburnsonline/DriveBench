@@ -85,16 +85,11 @@ def _bytes_label(value: Any) -> str:
 
 
 def _hardware_serial(disk: Mapping[str, Any], record: Mapping[str, Any] | None) -> str:
-    # Never label an operator serial as hardware verified.
     return _display(disk.get("serial") or (record or {}).get("last_device", {}).get("serial"), "")
 
 
 def report_filename(disk: Mapping[str, Any], record: Mapping[str, Any] | None = None) -> str:
-    """Stable name: brand, interface, model, capacity, and serial/asset ID.
-
-    If hardware serial is missing, an explicitly tagged operator identifier or
-    record ID is used; reports for anonymous drives cannot silently collide.
-    """
+    """Stable name: brand, interface, model, capacity, and serial/asset ID."""
     record = record or {}
     maker = disk.get("vendor") or record.get("last_device", {}).get("vendor") or "UnknownBrand"
     interface = disk.get("tran") or record.get("last_device", {}).get("tran") or "UnknownInterface"
@@ -148,7 +143,7 @@ def _test_sections(record: Mapping[str, Any], health: Mapping[str, Any] | None) 
         elif uniform.get("status"):
             rows.append(("Uniform byte pattern", _display(uniform.get("status"))))
         if result.get("assessment"):
-            rows.append(("File signature assessment", _display(result["assessment"]).replace("_", " ")))
+            rows.append(("File signature assessment", _display(result["assessment"]).replace("_", " "))
         markers = result.get("structural_markers")
         if isinstance(markers, list):
             rows.append(("Filesystem/partition markers", ", ".join(str(x) for x in markers[:6]) or "None recognized"))
@@ -172,14 +167,75 @@ def _test_sections(record: Mapping[str, Any], health: Mapping[str, Any] | None) 
     return sections
 
 
+def _smart_history_sections(record: Mapping[str, Any]) -> list[ReportSection]:
+    """Render saved SMART snapshots only; never infer unavailable as zero."""
+    from . import diagnostics
+
+    saved = [s for s in record.get('smart_history', []) if isinstance(s, Mapping)
+             and s.get('schema_version') == 1]
+    if not saved:
+        return []
+
+    latest = saved[-1]
+    rows = [
+        ('Saved SMART collections', str(len(saved))),
+        ('Most recent collection', _display(latest.get('collected_at'))),
+        ('Collection status', _display(latest.get('collection_status'))),
+        ('SMART probe', _display(latest.get('probe'))),
+        ('Device-reported SMART pass',
+         'Not reported' if latest.get('smart_passed') is None else
+         ('Passed (device-reported)' if latest['smart_passed'] else 'FAILED (device-reported)')),
+        ('Collection limitations', 'SMART alone does not verify media or sanitization.'),
+    ]
+    sections = [ReportSection('Saved SMART health evidence', tuple(rows))]
+
+    if len(saved) >= 2:
+        before, after = saved[-2], saved[-1]
+        try:
+            comparison = diagnostics.compare_smart_snapshots(before, after)
+        except diagnostics.DiagnosticError as exc:
+            sections.append(ReportSection('SMART comparison unavailable',
+                (('Reason', str(exc)),)))
+        else:
+            metrics = [
+                ('Before', _display(comparison.get('before_at'))),
+                ('After', _display(comparison.get('after_at'))),
+                ('Drive identity match', _display(comparison.get('identity_confidence'))),
+            ]
+            for item in comparison['rows']:
+                left = 'N/A' if item['before'] is None else f"{item['before']:,}"
+                right = 'N/A' if item['after'] is None else f"{item['after']:,}"
+                delta = 'N/A' if item['delta'] is None else f"{item['delta']:+,}"
+                metrics.append((item['label'], f'Before {left} | After {right} | Change {delta}'))
+            metrics.append(('Interpretation', comparison['limitations']))
+            sections.append(ReportSection('SMART before / after comparison', tuple(metrics)))
+    else:
+        sections.append(ReportSection('SMART comparison',
+            (('Status', 'Only one saved collection; collect another to compare.'),)))
+
+    details = []
+    for attr in latest.get('ata_attributes') or []:
+        if not isinstance(attr, Mapping):
+            continue
+        ident = attr.get('id')
+        if not isinstance(ident, int) or not 1 <= ident <= 255:
+            continue
+        name = str(attr.get('name') or 'Unnamed')[:70]
+        raw = _display(attr.get('raw'), 'Unavailable')
+        normalized = _display(attr.get('normalized'), 'N/A')
+        worst = _display(attr.get('worst'), 'N/A')
+        threshold = _display(attr.get('threshold'), 'N/A')
+        details.append((f'{ident:03d} {name}',
+                        f'Raw {raw} | Norm {normalized} | Worst {worst} | Thresh {threshold}'))
+    if details:
+        sections.append(ReportSection('Latest ATA SMART attribute details', tuple(details)))
+    return sections
+
+
 def build_sections(disk: Mapping[str, Any], record: Mapping[str, Any] | None = None,
                    *, health: Mapping[str, Any] | None = None,
                    extra_sections: Iterable[ReportSection] = ()) -> list[ReportSection]:
-    """Build a seller-facing report from saved evidence and explicit extras.
-
-    Future features can pass ReportSection instances, leaving the PDF renderer
-    unchanged. Discovery/recovery file paths and raw history are not copied.
-    """
+    """Build a seller-facing report from saved evidence and explicit extras."""
     record = record or {}
     serial = _hardware_serial(disk, record)
     rows = [
@@ -197,8 +253,7 @@ def build_sections(disk: Mapping[str, Any], record: Mapping[str, Any] | None = N
         rows.append(("DriveBench inventory ID", _display(record["id"])))
     sections = [ReportSection("Drive identification", tuple(rows))]
     sections.extend(_test_sections(record, health))
-    # Strictly whitelist extra sections from explicitly requested reporting
-    # features; callers decide what is seller-safe to publish.
+    sections.extend(_smart_history_sections(record))
     for section in extra_sections:
         if not isinstance(section, ReportSection):
             raise ReportError("Each extra section must be a ReportSection")
@@ -300,11 +355,7 @@ def generate_pdf(disk: Mapping[str, Any], record: Mapping[str, Any] | None = Non
                  *, output_dir: Path | str | None = None, replace: bool = False,
                  health: Mapping[str, Any] | None = None,
                  extra_sections: Iterable[ReportSection] = ()) -> Path:
-    """Atomically create a report; explicit replace permits future regeneration.
-
-    Default directory: ~/DriveBench-Reports. Never modifies the source disk.
-    No automatic printing. Caller should confirm the report before invoking lp.
-    """
+    """Atomically create a report; explicit replace permits future regeneration."""
     directory = Path(output_dir).expanduser() if output_dir else Path.home() / "DriveBench-Reports"
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     if not directory.is_dir():
