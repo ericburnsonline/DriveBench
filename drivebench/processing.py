@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import diagnostics, inventory, mounts, store
+from . import diagnostics, inventory, mounts, storage_claims, store
 
 
 class ProcessingError(RuntimeError):
@@ -86,6 +86,26 @@ def _swap_and_holders(disk: dict) -> list[str]:
     return issues
 
 
+def _settle_storage_events(stage: str) -> None:
+    """Wait for queued kernel/udev work; never claim this reserves the disk.
+
+    A nonzero exit status fails closed. This does not prevent a service from
+    acting later, so a new preflight inspection is always required afterward.
+    """
+    if not shutil.which('udevadm'):
+        print('  udevadm unavailable; continuing with fresh drive-identity and claim checks.', flush=True)
+        return
+    try:
+        result = subprocess.run(['udevadm', 'settle', '--timeout=15'],
+                                check=False, timeout=20)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProcessingError(f'Cannot settle pending device events {stage}: {exc}. '
+                              'Processing has stopped; review disk identity and Linux storage services.') from exc
+    if result.returncode != 0:
+        raise ProcessingError(f'udevadm settle failed {stage} (exit {result.returncode}). '
+                              'Processing has stopped; review disk identity and Linux storage services.')
+
+
 def _same(original: dict, current: dict) -> bool:
     return all(original.get(field) == current.get(field)
                for field in ('path', 'size', 'model', 'serial', 'wwn', 'identity', 'slot', 'hctl', 'diskseq'))
@@ -133,8 +153,21 @@ def preflight(original: dict, *, require_no_partitions: bool = False) -> dict:
             unsafe.append('kernel mount table shows this disk/partition mounted')
     except Exception as exc:
         unsafe.append(f'cannot inspect live mount table: {exc}')
-    if unsafe:
-        raise ProcessingError('Device is in use or cannot safely be assessed: ' + '; '.join(sorted(set(unsafe))))
+    # Add specific mount/holder names to the existing conservative guards.
+    # This read-only snapshot is NOT a disk lock and cannot replace identity
+    # revalidation immediately before a destructive command.
+    try:
+        claim_report = storage_claims.inspect_claims(disk)
+    except Exception as exc:
+        # Unexpected inspection errors must not authorize access.
+        unsafe.append(f'storage-claim inspection failed: {exc}')
+        claim_report = None
+    if unsafe or (claim_report is not None and claim_report['blocked']):
+        reason = '; '.join(sorted(set(unsafe)))
+        details = storage_claims.describe_claims(claim_report) if claim_report and claim_report['blocked'] else ''
+        raise ProcessingError('Device is in use or cannot safely be assessed: '
+                              + (reason or 'storage claim detected or inspection incomplete')
+                              + ('\n' + details if details else ''))
     if require_no_partitions and disk.get('partitions'):
         raise ProcessingError('Unexpected partitions remain; do not write a report to an ambiguous layout.')
     if any('Suspicious SCSI enumeration:' in message for message in result.get('warnings', [])) and disk.get('hctl'):
@@ -213,17 +246,26 @@ def wipe(disk: dict, pattern: str, passes: int, verify: bool) -> dict:
                                                'passes_completed': 0})
     device = disk['path']
     source = '/dev/zero' if pattern == 'zero' else '/dev/urandom'
+    verification = 'NOT COMPLETED' if verify else 'NOT REQUESTED'
+    stage = 'before overwrite'
     try:
         for index in range(passes):
+            stage = f'preflight before overwrite pass {index + 1}'
             preflight(disk)
             print(f'\nPASS {index + 1} OF {passes}. Do not disconnect this drive.')
+            stage = f'overwrite pass {index + 1}'
             run_privileged(['dd', f'if={source}', f'of={device}', 'bs=4M',
                             f'count={disk["size"]}', 'iflag=fullblock,count_bytes',
                             'conv=fsync,notrunc', 'status=progress'])
+            # The pass finished before any possible post-pass claim appears.
             store.update_processing(op, {'passes_completed': index + 1})
-        verification = 'NOT REQUESTED'
-        if verify:
+            stage = f'after overwrite pass {index + 1}'
+            _settle_storage_events(stage)
             preflight(disk)
+        if verify:
+            stage = 'before readback verification'
+            preflight(disk)
+            stage = 'readback verification'
             if pattern == 'zero':
                 print('Verifying every readable logical byte is zero (may take substantial time).')
                 run_privileged(['cmp', '-n', str(disk['size']), '--', device, '/dev/zero'])
@@ -233,10 +275,18 @@ def wipe(disk: dict, pattern: str, passes: int, verify: bool) -> dict:
                 run_privileged(['dd', f'if={device}', 'of=/dev/null', 'bs=4M',
                                 f'count={disk["size"]}', 'iflag=fullblock,count_bytes', 'status=progress'])
                 verification = 'READBACK PASSED; RANDOM CONTENT NOT VERIFIED'
-        store.finish_processing(op, success=True, fields={'verification': verification})
+            stage = 'after readback verification'
+            _settle_storage_events(stage)
+            preflight(disk)
+        store.finish_processing(op, success=True, fields={'verification': verification,
+                                                          'last_stage': stage})
         print(f'Wipe completed. {verification}. You can now format the drive.')
     except BaseException as exc:
-        store.finish_processing(op, success=False, fields={'failure': str(exc)})
+        store.finish_processing(op, success=False,
+                                fields={'failure': str(exc), 'failure_stage': stage,
+                                        'verification': verification})
+        print(f'WIPE STOPPED at: {stage}. Completed passes are retained in history. '
+              f'Verification: {verification}. No automatic repair was attempted.', flush=True)
         raise
     return op
 
@@ -254,6 +304,7 @@ def format_drive(disk: dict, fs: str) -> dict:
     disk = preflight(disk)
     layout = 'msdos' if fs == 'fat32' else 'gpt'
     op = store.start_processing(disk, 'format', {'filesystem': fs, 'partition_table': layout})
+    stage = 'partition-table creation'
     try:
         if fs == 'fat32':
             cmd = ['parted', '-s', '-a', 'optimal', '--', disk['path'], 'mklabel', 'msdos',
@@ -262,10 +313,11 @@ def format_drive(disk: dict, fs: str) -> dict:
             cmd = ['parted', '-s', '-a', 'optimal', '--', disk['path'], 'mklabel', 'gpt',
                    'mkpart', 'primary', '1MiB', '100%', 'set', '1', 'msftdata', 'on']
         run_privileged(cmd)
+        stage = 'partition table reread'
         if shutil.which('partprobe'):
             run_privileged(['partprobe', '--', disk['path']])
-        if shutil.which('udevadm'):
-            subprocess.run(['udevadm', 'settle', '--timeout=10'], check=False)
+        stage = 'after repartitioning'
+        _settle_storage_events(stage)
         after = next((d for d in inventory.discover()['disks'] if d['path'] == disk['path']), None)
         if not after or not _same(disk, after):
             raise ProcessingError('Drive identity changed after repartitioning; stop and investigate.')
@@ -275,16 +327,22 @@ def format_drive(disk: dict, fs: str) -> dict:
         part = parts[0]['path']
         _majmin(part)
         preflight(after)
+        stage = 'filesystem creation'
         if fs == 'fat32':
             run_privileged(['mkfs.fat', '-F', '32', '-n', 'DRIVEBENCH', part])
         else:
             run_privileged(['mkfs.exfat', '-L', 'DRIVEBENCH', part])
-        if shutil.which('udevadm'):
-            subprocess.run(['udevadm', 'settle', '--timeout=10'], check=False)
-        store.finish_processing(op, success=True, fields={'partition': part})
+        stage = 'after filesystem creation'
+        _settle_storage_events(stage)
+        preflight(after)
+        store.finish_processing(op, success=True, fields={'partition': part,
+                                                          'last_stage': stage})
         print('Partition formatted:', part, fs)
     except BaseException as exc:
-        store.finish_processing(op, success=False, fields={'failure': str(exc)})
+        store.finish_processing(op, success=False,
+                                fields={'failure': str(exc), 'failure_stage': stage})
+        print(f'FORMAT STOPPED at: {stage}. The drive may be partially prepared; '
+              'inspect it before attempting further changes.', flush=True)
         raise
     return op
 
