@@ -143,7 +143,7 @@ def _test_sections(record: Mapping[str, Any], health: Mapping[str, Any] | None) 
         elif uniform.get("status"):
             rows.append(("Uniform byte pattern", _display(uniform.get("status"))))
         if result.get("assessment"):
-            rows.append(("File signature assessment", _display(result["assessment"]).replace("_", " "))
+            rows.append(("File signature assessment", _display(result["assessment"]).replace("_", " ")))
         markers = result.get("structural_markers")
         if isinstance(markers, list):
             rows.append(("Filesystem/partition markers", ", ".join(str(x) for x in markers[:6]) or "None recognized"))
