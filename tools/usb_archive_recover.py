@@ -3,7 +3,7 @@
 """Standalone USB archive: image, copy, recover, and optionally wipe USB disks.
 
 Ubuntu: sudo apt install gddrescue testdisk util-linux
-Configuration: /etc/drivebench/usb_archive.ini (not inside your Git repository).
+Configuration: tools/usb_archive.ini (local file, ignored by Git).
 
 Archive-only mode (interactive):
     sudo python3 usb_archive_recover.py
@@ -38,7 +38,7 @@ import subprocess
 import sys
 import time
 
-CONFIG_PATH = Path('/etc/drivebench/usb_archive.ini')
+CONFIG_PATH = Path(__file__).resolve().with_name('usb_archive.ini')
 LOCK_DIR = Path('/run/lock/usb_archive_recover')
 CHUNK = 4 * 1024 * 1024
 FREE_SPACE_FILESYSTEMS = {'vfat', 'fat', 'fat12', 'fat16', 'fat32', 'ntfs',
@@ -369,7 +369,7 @@ def copy_existing(source_mount, target):
             if src.is_symlink():
                 os.symlink(os.readlink(src), dst)
             elif src.is_file():
-                shutil.copy2(src, dst, follow_symlinks=False)
+                shutil.copy2(src, dst)
             else:
                 raise RuntimeError(f'Unsupported device/special file: {src}')
     source_items = files_and_symlinks(source_mount)
@@ -538,7 +538,8 @@ def wipe_zero_and_verify(original, folder, report, output, destination_mount):
 def load_configuration(path):
     if not path.is_file():
         raise RuntimeError(f'Configuration file not found: {path}\n'
-                           'Install usb_archive.ini.example at that path and edit destination.')
+                           'Copy tools/usb_archive.ini.example to tools/usb_archive.ini, '
+                           'then edit its destination.')
     config = configparser.ConfigParser(interpolation=None)
     with path.open(encoding='utf-8') as fp:
         config.read_file(fp)
@@ -684,7 +685,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--config', type=Path, default=CONFIG_PATH,
-                        help=f'INI file OUTSIDE repo (default {CONFIG_PATH})')
+                        help=f'Local INI file (default {CONFIG_PATH})')
     parser.add_argument('--unattended', action='store_true',
                         help='After explicit WIPE /dev/sdX selection: copy, carve, then zero + verify, no more prompts')
     parser.add_argument('--output', type=Path, help='Override archive destination from config')
