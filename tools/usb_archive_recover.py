@@ -369,7 +369,7 @@ def copy_existing(source_mount, target):
             if src.is_symlink():
                 os.symlink(os.readlink(src), dst)
             elif src.is_file():
-                shutil.copy2(src, dst)
+                shutil.copy2(src, dst, follow_symlinks=False)
             else:
                 raise RuntimeError(f'Unsupported device/special file: {src}')
     source_items = files_and_symlinks(source_mount)
