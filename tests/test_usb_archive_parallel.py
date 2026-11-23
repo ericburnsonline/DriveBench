@@ -20,6 +20,38 @@ from unittest.mock import patch
 from tools import usb_archive_recover as archive
 
 
+class LocalConfigurationTests(unittest.TestCase):
+    """Configuration lives beside the script, not in /etc or the caller CWD."""
+
+    def test_default_config_is_next_to_script(self):
+        self.assertEqual(
+            Path(archive.__file__).resolve().with_name('usb_archive.ini'),
+            archive.CONFIG_PATH,
+        )
+
+    def test_example_configuration_loads_after_copy(self):
+        example = Path(archive.__file__).resolve().with_name('usb_archive.ini.example')
+        self.assertTrue(example.is_file())
+        with tempfile.TemporaryDirectory() as temp:
+            local = Path(temp) / 'usb_archive.ini'
+            local.write_bytes(example.read_bytes())
+            destination, mode = archive.load_configuration(local)
+        self.assertTrue(destination.is_absolute())
+        self.assertEqual('auto', mode)
+
+    def test_missing_configuration_explains_local_copy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            nonexistent = Path(temp) / 'usb_archive.ini'
+            with self.assertRaisesRegex(RuntimeError, 'tools/usb_archive.ini.example'):
+                archive.load_configuration(nonexistent)
+
+    def test_repository_ignores_local_ini_not_template(self):
+        repo = Path(archive.__file__).resolve().parent.parent
+        rules = (repo / '.gitignore').read_text(encoding='utf-8').splitlines()
+        self.assertIn('/tools/usb_archive.ini', rules)
+        self.assertNotIn('/tools/usb_archive.ini.example', rules)
+
+
 class ParallelLockTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
