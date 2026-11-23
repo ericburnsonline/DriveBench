@@ -1,0 +1,18 @@
+
+# Example for the standalone tools/usb_archive_recover.py utility.
+# Copy to tools/usb_archive.ini and edit for YOUR backup disk.
+# The real tools/usb_archive.ini is ignored by Git; this template stays tracked.
+# The script does not write to this example file.
+#
+# The directory below MUST already exist on a mounted, local, non-root
+# backup filesystem, physically separate from every USB source drive.
+# Do NOT point it at /, /home, a directory on the USB source, or an
+# unmounted backup-disk mount point.
+
+[archive]
+destination = /mnt/drivebench-archive/usb-recovery
+
+# auto: PhotoRec free-space scan on supported filesystems, otherwise whole-space.
+# freespace: require a supported filesystem, otherwise stop.
+# wholespace: scan the whole partition for file signatures.
+recovery_mode = auto
