@@ -71,17 +71,11 @@ def _ask(prompt: str) -> str:
 
 
 def _heading(title: str) -> None:
-    """Display the installed application version in each menu."""
     print(f"\n{title}  |  DriveBench v{__version__}")
 
 
 def _refresh_selected_disk(disk: dict) -> dict:
-    """Keep a selection current without trusting an old /dev path.
-
-    Re-check the physical identity on every selection. If a disk is
-    removed, replaced, or renumbered, require explicit reselection.
-    Never silently follow a newly allocated /dev/sdX device name.
-    """
+    """Recheck physical identity, never trusting an old /dev path."""
     matches = [d for d in snapshot()["disks"]
                if d.get("path") == disk.get("path")]
     if len(matches) != 1 or not processing._same(disk, matches[0]):
@@ -264,14 +258,94 @@ def _filesystem_menu(disk: dict) -> None:
     print(diagnostics.filesystem_report(disk, sudo=priv))
 
 
-def _health_menu(disk: dict) -> None:
-    print("\nCollecting device-reported SMART/SCSI data (read-only).")
-    print("A health report does not replace a full surface test.")
-    priv = _ask("Use sudo for access to raw drive details? (y/N): ").lower() == 'y'
+def _collect_smart_for_disk(disk: dict) -> None:
+    """Operator-triggered SMART snapshot; no disk writes or automatic baselines."""
+    if not disk.get('record_id'):
+        raise UserError('Identify or explicitly attach this drive to a record before saving SMART history')
+    print('This is a read-only SMART collection. It does not begin a self-test or wipe.')
+    priv = _ask('Use sudo to read SMART information? (y/N): ').lower() == 'y'
     sat = False
-    if str(disk.get('tran', '')).lower() == 'usb':
-        sat = _ask("Use SAT translation (-d sat) for USB bridge? (y/N): ").lower() == 'y'
-    print(diagnostics.health_report(disk['path'], sudo=priv, usb_sat=sat))
+    if str(disk.get('tran') or '').lower() == 'usb':
+        sat = _ask('Force SAT passthrough (-d sat)? Otherwise try automatic fallback. (y/N): ').lower() == 'y'
+    if priv and subprocess.run(['sudo', '-v'], check=False).returncode:
+        raise UserError('sudo authentication failed; no SMART snapshot was saved')
+    before = _refresh_selected_disk(disk)
+    reading = diagnostics.collect_smart_snapshot(before, sudo=priv, usb_sat=sat)
+    after = _refresh_selected_disk(before)
+    if not processing._same(before, after) or after.get('record_id') != disk.get('record_id'):
+        raise UserError('Drive or record changed during SMART collection; result not saved')
+    event_id = store.record_smart_snapshot(after, reading)
+    print(f'SMART snapshot saved under {after["record_id"]}: {event_id}')
+    print('Collected:', reading.get('collected_at'))
+    print('Collection status:', reading.get('collection_status'))
+    print('Device-reported health:', reading.get('smart_passed'))
+    for key, value in sorted((reading.get('metrics') or {}).items()):
+        print(f'  {diagnostics.SMART_METRIC_LABELS.get(key, key)}: {value}')
+    if reading.get('collection_status') != 'COLLECTED':
+        print('WARNING: SMART data was partial or unavailable. The snapshot is saved as such.')
+
+
+def _smart_history_view(record_id: str) -> None:
+    """Show the last two saved snapshots, even when the drive is disconnected."""
+    history = store.smart_history(record_id)
+    if not history:
+        print('No saved SMART snapshots for this drive yet.')
+        return
+    print(f'\nSaved SMART snapshots: {len(history)}')
+    for item in history[-10:]:
+        print(f' {item.get("collected_at") or "time unknown"}  '
+              f'{item.get("collection_status") or "unknown"}  '
+              f'{item.get("probe") or "auto"}  {item.get("event_id") or ""}')
+    if len(history) < 2:
+        print('Capture a second SMART snapshot to compare measurements.')
+        return
+    try:
+        comparison = diagnostics.compare_smart_snapshots(history[-2], history[-1])
+    except diagnostics.DiagnosticError as exc:
+        print(f'Last two snapshots cannot be compared: {exc}')
+        return
+    print('\nMOST RECENT TWO SMART SNAPSHOTS')
+    print(' Before:', comparison['before_at'])
+    print(' After: ', comparison['after_at'])
+    print(' Identity assurance:', comparison['identity_confidence'])
+    print(f' {"Measurement":40} {"Before":>12} {"After":>12} {"Change":>12}')
+    for row in comparison['rows']:
+        value = lambda n: 'unavailable' if n is None else str(n)
+        delta = 'n/a' if row['delta'] is None else f'{row["delta"]:+d}'
+        print(f' {row["label"][:40]:40} {value(row["before"]):>12} '
+              f'{value(row["after"]):>12} {delta:>12}')
+    print('A change in a counter does not independently establish drive health.')
+
+
+def _health_menu(disk: dict) -> None:
+    """Read-only SMART inspection and manually saved health snapshots."""
+    while True:
+        _heading('SMART / SCSI HEALTH')
+        print(' 1. Show current device-reported SMART / SCSI details (read-only)')
+        print(' 2. Collect and SAVE a timestamped SMART snapshot (read-only)')
+        print(' 3. Compare the two latest saved SMART snapshots')
+        print(' 0. Back')
+        choice = _ask('Selection: ')
+        if choice == '0':
+            return
+        if choice == '1':
+            print('A SMART report does not replace a full surface test.')
+            priv = _ask('Use sudo for access to raw drive details? (y/N): ').lower() == 'y'
+            sat = False
+            if str(disk.get('tran') or '').lower() == 'usb':
+                sat = _ask('Use SAT translation (-d sat) for USB bridge? (y/N): ').lower() == 'y'
+            disk = _refresh_selected_disk(disk)
+            print(diagnostics.health_report(disk['path'], sudo=priv, usb_sat=sat))
+        elif choice == '2':
+            disk = _refresh_selected_disk(disk)
+            _collect_smart_for_disk(disk)
+        elif choice == '3':
+            if not disk.get('record_id'):
+                print('No associated history record; identify this drive first.')
+            else:
+                _smart_history_view(disk['record_id'])
+        else:
+            print('Unknown selection')
 
 
 def _network_update_menu() -> None:
@@ -313,8 +387,6 @@ def _network_update_menu() -> None:
     print("\n" + updates.upgrade_instructions(archive, branch['name']))
 
 
-# Keep weak-identity processing evidence in memory only while a disk remains
-# selected in this session. On reboot, it must not be assumed to be the same drive.
 _SESSION_EVENTS: dict[tuple, list[str]] = {}
 _SESSION_MANUAL_LINKS: dict[tuple, str] = {}
 
@@ -402,7 +474,6 @@ def _raw_analysis_menu(disk: dict) -> None:
         current = next((d for d in snapshot()['disks'] if d['path'] == disk['path']), None)
         if current is None or not processing._same(disk, current):
             raise UserError('Disk identity changed. Rescan before analysis.')
-        # Preserve an explicitly bound manual record for this session.
         if current.get('manual_record_id') and current.get('operator_bound_session'):
             disk = current
         if choice in ('1', '2'):
@@ -547,7 +618,6 @@ def _pdf_report_menu(disk: dict) -> None:
     record = store.read_state().get('records', {}).get(record_id)
     if not record:
         raise UserError('No associated drive record. Use Identify Drive first to save a record.')
-
     destination = Path.home() / 'DriveBench-Reports'
     filename = reports.report_filename(fresh, record)
     target = destination / filename
@@ -602,42 +672,28 @@ def _create_bag_label(disk: dict, record: dict) -> None:
         }
         return descriptions[size]
 
-    selected = _pick(
-        sizes,
-        "ANTISTATIC BAG LABEL SIZE",
-        size_description,
-    )
+    selected = _pick(sizes, "ANTISTATIC BAG LABEL SIZE", size_description)
     if selected is None:
         return
-
     size = selected[1]
     if size not in labels.LABEL_SIZES:
-        raise UserError(
-            f"Label size {size} is unavailable in the installed labels module."
-        )
+        raise UserError(f"Label size {size} is unavailable in the installed labels module.")
 
     destination = Path.home() / "DriveBench-Reports" / "labels"
     filename = labels.label_filename(disk, record, size=size)
     target = destination / filename
-
     _heading("ANTISTATIC BAG LABEL")
     print(" Drive:", disk.get("model") or "(unknown)")
     print(" Size:", size, "inches")
     print(" PDF:", target)
     print(" No source-drive writes or printer jobs will be performed.")
-
     replace = target.exists()
     if replace:
         if _ask("Label already exists. Type REGENERATE to replace it: ") != "REGENERATE":
             print("Existing label preserved.")
             return
-
     output = labels.generate_label(
-        disk,
-        record,
-        size=size,
-        output_dir=destination,
-        replace=replace,
+        disk, record, size=size, output_dir=destination, replace=replace,
     )
     print("Bag label PDF saved:", output)
     print("This PDF has the selected label dimensions.")
@@ -653,25 +709,17 @@ def _bag_label_menu(disk: dict) -> None:
         or not processing._same(disk, fresh)
         or fresh.get('record_id') != disk.get('record_id')):
         raise UserError("Drive identity or saved record changed. Rescan before generating the label.")
-
     record_id = fresh.get('record_id')
     if not record_id:
         raise UserError("No associated drive record. Identify the drive first.")
-
     record = store.read_state().get('records', {}).get(record_id)
     if not record:
         raise UserError("Saved drive record not found.")
-
     _create_bag_label(fresh, record)
 
 
 def _disk_menu(disk: dict) -> None:
-    """Keep the selected drive active across all operations.
-
-    Before each selection, refresh the current hardware identity. A
-    renumbered, disconnected, or replaced device forces reselection.
-    Destructive operations still perform their own independent preflight.
-    """
+    """Keep the selected drive active across all operations."""
     while True:
         _heading("SELECTED DRIVE")
         print(" Target:", _disk_desc(disk))
@@ -682,7 +730,7 @@ def _disk_menu(disk: dict) -> None:
         print(" 4. Add disk exclusion")
         print(" 5. View history / add note / manual wipe report")
         print(" 6. Inspect filesystem / partition signatures (read-only)")
-        print(" 7. Show SMART / SCSI drive-health details (read-only)")
+        print(" 7. SMART / SCSI health: view, save snapshots, compare")
         print(" 8. Show detailed SCSI log pages (if available, read-only)")
         print(" 9. Wipe / format / write drive report (DESTRUCTIVE)")
         print("10. Identify drive / manually enter serial and asset ID")
@@ -696,15 +744,11 @@ def _disk_menu(disk: dict) -> None:
         if choice not in {str(n) for n in range(1, 14)}:
             print("Unknown selection")
             continue
-
-        # Refresh before every action, including reports, inventory and history.
-        # Never silently rebind an old /dev/sdX to a different physical disk.
         try:
             disk = _refresh_selected_disk(disk)
         except UserError as exc:
             print("\nDRIVE SELECTION INVALIDATED:", exc)
             return
-
         try:
             if choice == "1":
                 _show_disk_details(disk)
@@ -717,8 +761,6 @@ def _disk_menu(disk: dict) -> None:
                 _mount_partition_menu(disk)
             elif choice == "4":
                 _add_exclusion_disk(disk)
-                # An explicitly excluded disk must be reselected before
-                # another operation is attempted.
                 return
             elif choice == "5":
                 _single_history_menu(disk.get("record_id"))
@@ -743,8 +785,6 @@ def _disk_menu(disk: dict) -> None:
                 diagnostics.DiagnosticError, processing.ProcessingError,
                 raw_analysis.AnalysisError, reports.ReportError,
                 ValueError, RuntimeError, OSError) as exc:
-            # A normal error does not discard the user's selected drive.
-            # The next menu action still starts with fresh identity validation.
             print("\nERROR:", exc)
 
 
@@ -789,6 +829,7 @@ def _single_history_menu(record_id: str | None) -> None:
         print(" 3. Record a wipe done outside DriveBench (operator report only)")
         print(" 4. Generate / regenerate a PDF from saved history (drive can be disconnected)")
         print(" 5. Generate / regenerate an antistatic bag label PDF")
+        print(" 6. Compare saved SMART snapshots (drive may be disconnected)")
         print(f" Serial: hardware={record.get('last_device', {}).get('serial') or '-'} "
               f"operator={record.get('manual_serial') or '-'} asset={record.get('asset_id') or '-'}")
         print(" 0. Back")
@@ -811,7 +852,7 @@ def _single_history_menu(record_id: str | None) -> None:
                 raise UserError("Pass count must be a positive number")
             if _ask("Type REPORT to confirm external wipe statement: ") == "REPORT":
                 store.record_manual_wipe(record_id, method, int(raw_passes), note)
-                print("Recorded MANUAL_WIPE_REPORTED, NOT VERIFIED BY DRIVEBENCH")
+                print("Recorded MANUAL_WIPE_REPORTED, NOT VERIFIED BY DRIVEBench")
         elif choice == '4':
             stored = record.get('last_device') or {}
             if not stored:
@@ -832,6 +873,8 @@ def _single_history_menu(record_id: str | None) -> None:
                 print('No saved disk information is available for this record.')
                 continue
             _create_bag_label(stored, record)
+        elif choice == '6':
+            _smart_history_view(record_id)
         else:
             print("Unknown selection")
 
@@ -914,7 +957,9 @@ def menu() -> None:
                 _network_update_menu()
             else:
                 print("Unknown selection")
-        except (UserError, inv.InventoryError, mounts.MountError, diagnostics.DiagnosticError, updates.UpdateError, processing.ProcessingError, raw_analysis.AnalysisError, ValueError, RuntimeError, OSError) as exc:
+        except (UserError, inv.InventoryError, mounts.MountError, diagnostics.DiagnosticError,
+                updates.UpdateError, processing.ProcessingError, raw_analysis.AnalysisError,
+                ValueError, RuntimeError, OSError) as exc:
             print("\nERROR:", exc)
             if isinstance(exc, inv.InventoryError):
                 print(deps.instructions())

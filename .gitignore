@@ -1,3 +1,4 @@
+
 # DriveBench test logs
 logs/
 *.log
@@ -25,3 +26,6 @@ Thumbs.db
 # Local drive records and configuration
 state.json
 config.json
+
+# Local USB archive destination / recovery preferences (never commit)
+/tools/usb_archive.ini
